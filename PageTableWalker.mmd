@@ -1,0 +1,46 @@
+graph TD
+    classDef highlight fill:#ffcc00,stroke:#ff9900,stroke-width:2px;
+    classDef prefetcher fill:#aaaa00,stroke:#ff2200,stroke-width:4px;
+    subgraph handle_fill
+        check_mshr{MSHR is empty?} -.->
+        |no|get_pkt_from_mshr[get packet from MSHR] -->
+        check_translation{packet is translated?}-.->
+        |yes|return_pa_to_stlb[return Physical Address to STLB]
+
+        subgraph VirtualMemory::get_pte_by_pa
+            get_key[get key from virtual address]-->
+            try_insert_to_page_table[find PTE by using key]-->
+            check_get_pte{PTE has a mapping already?}-.->
+            |no|get_ppage[get physical page from ppage_free_list]
+            get_pte_by_pa_return[return ppage]
+            
+            check_get_pte-.->|yes|get_pte_by_pa_return
+            get_ppage-.->get_pte_by_pa_return
+        end
+        fill_cache["(cascading)fill cache according to PageStructureCacheLevel"] -->
+        push_to_rq[push to lower rq]
+
+        check_translation-.->|no|VirtualMemory::get_pte_by_pa
+        VirtualMemory::get_pte_by_pa--> fill_cache
+
+        return_pa_to_stlb-->check_mshr
+        push_to_rq-->check_mshr
+    end
+    subgraph handle_read
+         check_rq{Read Queue is empty?} 
+         subgraph traverse_pscl[traverse PSCL]
+            check_pscl_hit{PSCL hit?}-.->
+            hit_action[get page_table_walker address and reduce pscl's level]
+         end
+        make_pkt[make pkt by ptw address and level]
+        add_rq[add pkt to lower level read queue]
+         check_rq-.->|no|traverse_pscl
+         traverse_pscl-->make_pkt
+         
+    end
+    RQ.operate
+
+    handle_fill -->
+    handle_read -->
+    RQ.operate
+    %%class prefetcher
