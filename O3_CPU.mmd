@@ -1,0 +1,122 @@
+graph TD
+    classDef highlight fill:#ffcc00,stroke:#ff9900,stroke-width:2px;
+    subgraph O3_CPU::operate
+        subgraph retire_rob %% retire rob
+            check_completed_rob{completed ROB remained?} -.-> 
+            |yes|retire_rob_check_dest{ROB entry completed?} -.->
+            |yes|create_packet -->
+            deliver_packet[deliver packet to l1d.wq] -->
+            check_completed_rob
+            retire_rob_check_dest -.-> |no|check_completed_rob
+        end
+        subgraph complete_inflight_inst %% finalize execution
+            complete_inflight_inst_check_rob{ROB remained?} -.->
+            |yes|complete_exe[complete inflight rob entry] -->
+            complete_inflight_inst_push_to_ready[push dependent ROB to execution ready queue]
+            --> complete_inflight_inst_check_rob
+        end
+        subgraph execute_inst %% execute instructions
+            check_ready_queue{issued < execution width?} -.->
+            |yes|do_execution -->
+            add_execution_cycle --> check_ready_queue
+        end
+        subgraph sched_inst %% schedule instruction
+            sched_inst_check_rob{ROB remained?} -.->
+            |yes|sched_rob_to_ready_queue -->
+            sched_inst_push_to_ready[push completed ROB to execution ready queue] -->
+            sched_inst_check_rob
+        end
+        subgraph handle_memory_return %% finalize memory transaction
+            check_bw{fetch bandwidth exeeded?} -.->
+            |no|marK_inst[mark the instructions in IFETCH_BUFFER as translated and ready to fetch]
+        end
+        subgraph operate_lsq %% execute memory transaction
+            subgraph operate_lsq_handle_store1[handle_store:rts0 to dtlb]
+                check_sq_width_rts0{# of store exeeded SQ_WIDTH OR RTS0 is empty?} -.->
+                |no|do_translate_store -->
+                operate_lsq_handle_store_add_rq(add packet to rq at lower level of DTLB)
+            end
+           subgraph operate_lsq_handle_store2[handle_store:rts1]
+                check_sq_width_rts1{# of store exeeded SQ_WIDTH OR RTS1 is empty?} -.->
+                |no|execute_store --> resolve_raw[resolve read after write dependency]
+                resolve_raw --> update_lq[update corresponding lq entry]
+           end
+           subgraph operate_lsq_handle_load1[handle_store:rtl0 to dtlb]
+                check_sq_width_rtl0{# of load exeeded LQ_WIDTH OR RTL0 is empty?} -.->
+                |no|do_translate_load -->
+                operate_lsq_handle_load_add_rq1(add packet to rq at lower level of DTLB)
+           end
+           subgraph operate_lsq_handle_load2[handle_load:rtl1]
+                check_sq_width_rtl1{# of load exeeded LQ_WIDTH OR RTL1 is empty?} -.->
+                |no|execute_load --> operate_lsq_handle_load_add_rq2(add packet to rq at lower level of DTLB)
+           end
+           check_sq_width_rts0 -.->|yes|operate_lsq_handle_store2
+           check_sq_width_rts1 -.->|yes|operate_lsq_handle_load1
+           check_sq_width_rtl0 -.->|yes|operate_lsq_handle_load2
+        end
+        subgraph sched_mem_inst %% schedule memory transaction
+            sched_mem_inst_check_rob{ROB remained?} -.->
+            |yes|check_inst_is_mem{ROB inst is mem? and no_dependency? and inflight?}
+            subgraph do_mem_sched
+                check_lq_empty_slot{empty LQ slot exist?}
+                add_load_queue[add_load_queue:check RAW of ROB inst and push to RTL0]                    
+                check_sq_empty_slot{empty SQ slot exist?}
+                add_store_queue[add_store_queue:push to RTS0, no need for RAW check]
+            end
+            check_inst_is_mem -.-> |no|sched_mem_inst_check_rob
+            check_inst_is_mem -.-> |yes|do_mem_sched
+            check_lq_empty_slot -.-> |yes|add_load_queue
+            add_load_queue --> check_sq_empty_slot
+            check_lq_empty_slot -.-> |no|check_sq_empty_slot
+            check_sq_empty_slot -.-> |yes|add_store_queue
+        end
+        subgraph dispatch_inst
+            check_dispatch_bw{dispatch BW available} -.->
+            |yes|check_dispatch_buf{dispatch buf is not empty} -.->
+            |yes|check_rob_full{ROB is not full} -.->
+            |yes|add_to_rob[add dispatch item to ROB]
+        end
+        subgraph decode_inst
+            check_decode_bw{decode BW available} -.->
+            |yes|check_decode_buf{decode buf is not empty} -.->
+            |yes|check_dispatch_full{dispatch buf is not full} -.->
+            |yes|do_dib_update[do_dib_udpate:add inst to dib by using LRU] -->
+            push_to_dispatch_buf[push decoded entry to dispatch buf]
+        end
+        subgraph promote_to_decode
+            check_fetch_bw{fetch BW available} -.->
+            |yes|check_fetch_buf{ifetch buf is not empty and decode buf is not full} -.->
+            |yes|check_fetch_front{ifetch_buf.front translated and fetched} -.->
+            |yes|push_to_decode_buf[push fetched inst to decode buf]
+        end
+        subgraph fetch_inst
+            mispredict_penalty[check mispredict by looking fetch_stall] -->
+            fetch_cache_line[fetch cache line that already translated from ifetch_buf to L1I cache] -->
+            fetch_inst_add_rq(add packet to rq at lower level of L1I)
+        end
+        subgraph translate_fetch
+            check_translation[scan ifetch_buf for non-transalted inst] -->
+            do_translate_fetch[send inst to ITLB for translate:add packet to rq at lower level of ITLB]
+        end
+        subgraph check_dib
+            check_hit_int_decode_buf[scan ifetch_buf for hit in the decoded inst buf] -->
+            check_dib_hit{is this cache-line fetched recently by DIB?} -.->
+            |yes|update_dib_lru[update DIB LRU]
+        end
+
+        retire_rob -->
+        complete_inflight_inst -->
+        execute_inst -->
+        sched_inst -->
+        handle_memory_return -->
+        operate_lsq -->
+        sched_mem_inst -->
+        dispatch_inst -->
+        decode_inst -->
+        promote_to_decode -->
+        fetch_inst -->
+        translate_fetch -->
+        check_dib
+
+        class operate_lsq_handle_store_add_rq,operate_lsq_handle_load_add_rq1,operate_lsq_handle_load_add_rq2,fetch_inst_add_rq,do_translate_fetch highlight
+    end
