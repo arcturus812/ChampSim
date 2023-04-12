@@ -1,0 +1,30 @@
+graph TD
+    subgraph main
+        subgraph init_caches
+            caches[llc,l2c,l1d,stlb,itlb,dtlb,l1i]
+        end
+        subgraph simulation_loop
+            check_sim_finish{all simulation finished?}
+            subgraph operate_component
+                cpu,llc,l2c,l1d,ptw,stlb,itlb,dtlb,l1i,dram
+            end
+            get_next_multiple_trace --> check_warmup_finish{all warmup finished?}
+            reset_cache_stat
+            reset_dram_stat
+        end
+        
+
+        parsing_argument --> init_dram
+        init_dram --> init_trace
+        init_trace --> init_core
+        init_core --> init_caches
+        init_caches --> simulation_loop
+        check_sim_finish -.->|no|operate_component
+        operate_component --> get_next_multiple_trace
+        check_warmup_finish -.->|no|check_sim_finish
+        check_warmup_finish -.->|yes|reset_cache_stat
+        reset_cache_stat -->reset_dram_stat
+        reset_dram_stat --> check_sim_finish
+
+        check_sim_finish -.->|yes|print_statics
+    end
