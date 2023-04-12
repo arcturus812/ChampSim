@@ -3,6 +3,12 @@ inc/cache_modules.inc
 inc/ooo_cpu_modules.inc
 src/core_inst.cc
 .champsimconfig_cache
+.vscode
+tags
+my_config.json
+cscope.out
+cscope.files
+Makefile
 ./Makefile
 
 bin/
