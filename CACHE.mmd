@@ -1,0 +1,196 @@
+graph TD
+    classDef highlight fill:#ffcc00,stroke:#ff9900,stroke-width:2px;
+    classDef prefetcher fill:#aaaa00,stroke:#ff2200,stroke-width:4px;
+    
+        subgraph operate_write
+            subgraph handle_fill
+                check_fill_mshr{MSHR empty?} -.->
+                |no|handle_fill_find_victim[find victim] -->
+                replace[replace victim, it dpend on replacement policy]
+                subgraph filllike_miss
+                    checK_dirty{evicting cache block is dirty?}  -.->
+                    |yes|push_to_lower[writeback to lower level cache wq] -->
+                    check_prefetched_block1{evicting block is prefetched one} -.->
+                    |yes|increase_pf_useless(increase pf_useless)
+                    check_prefetched_block2{fill block is prefetched one} -.->
+                    |yes|increase_pf_fill(increase pf_fill) -->
+                    update_prefetcher(update prefetcher, it depend on prefetcher impl) -->
+                    filllike_miss_update_replacement(update cache replacement state)
+
+                    checK_dirty -.-> |no|check_prefetched_block1
+                    increase_pf_useless -->check_prefetched_block2
+                    check_prefetched_block1 -.->|no|check_prefetched_block2
+                    check_prefetched_block2 -.->|no|update_prefetcher
+                end
+                replace --> filllike_miss
+            end
+            subgraph handle_writeback
+                get_pkt_from_wq[get packet from write queue] -->
+                check_hit{packet is hit?} -.->
+                |yes|handle_writeback_update_replacement(update cache replacement state) -->
+                mark_dirty(mark cache block as dirty)
+
+                check_pkt_type{packet type is RFO_Read For Ownership?}
+                subgraph handle_writeback_readlike_miss
+                    check_readlike_mshr{MSHR empty?} -.->
+                    |yes|readlke_merge[merge dependency of merge and pkt]
+                    check_prefetch_useful{mshr entry is prefetched and pkt is not prefetched} -.->
+                    |yes|increase_pf_useful[increase usefulness of prefetcher]
+                    check_mshr_full{mshr is ful?} -.->
+                    |no|check_room_lower_queue{"lower queue(RQ or PQ) has room?"}-.->
+                    |no|insert_pkt_to_mshr[insert packet to MSHR]
+                    update_pkt_return[update pkt's to_return value as this level of cache]
+                    check_read_or_pf{is this packet's prefetch flag is up?} -.->
+                    |yes|push_to_lower_pq[push pkt to lower level's PQ]
+                    push_to_lower_rq[push pkt to lower level's RQ]
+
+                    handle_writeback_check_activate_prefetcher{should activate prefetcher?}-.->
+                    |yes|handle_writeback_impl_pref_cache_operate[impl_prefetcher_cache_operate it depend on prefetcher]
+
+                    check_readlike_mshr -.->|no|check_mshr_full
+                    readlke_merge --> check_prefetch_useful
+                    check_read_or_pf -.->|no|push_to_lower_rq
+                    insert_pkt_to_mshr --> update_pkt_return
+                    update_pkt_return --> check_read_or_pf
+                    increase_pf_useful --> handle_writeback_check_activate_prefetcher
+                    check_prefetch_useful -.->|no|handle_writeback_check_activate_prefetcher
+                    push_to_lower_pq -->handle_writeback_check_activate_prefetcher
+                    push_to_lower_pq -->handle_writeback_check_activate_prefetcher
+                end
+                handle_writeback_find_victim[find replace victim]
+                subgraph handle_writeback_filllike_miss
+                    handle_writeback_checK_dirty{evicting cache block is dirty?}  -.->
+                    |yes|handle_writeback_push_to_lower[writeback to lower level cache wq] -->
+                    handle_writeback_check_prefetched_block1{evicting block is prefetched one} -.->
+                    |yes|handle_writeback_increase_pf_useless(increase pf_useless)
+                    handle_writeback_check_prefetched_block2{fill block is prefetched one} -.->
+                    |yes|handle_writeback_increase_pf_fill(increase pf_fill) -->
+                    handle_writeback_update_prefetcher(update prefetcher, it depend on prefetcher impl) -->
+                    handle_writeback_filllike_miss_update_replacement(update cache replacement state)
+
+                    handle_writeback_checK_dirty -.-> |no|handle_writeback_check_prefetched_block1
+                    handle_writeback_increase_pf_useless -->handle_writeback_check_prefetched_block2
+                    handle_writeback_check_prefetched_block1 -.->|no|handle_writeback_check_prefetched_block2
+                    handle_writeback_check_prefetched_block2 -.->|no|handle_writeback_update_prefetcher
+                end
+
+                check_hit -.->|no|check_pkt_type
+                check_pkt_type -.->|no|handle_writeback_find_victim
+                check_pkt_type -.->|yes|handle_writeback_readlike_miss
+                handle_writeback_find_victim -->handle_writeback_filllike_miss
+
+            end
+            subgraph WQ.operate
+            end
+
+            handle_fill --> 
+            handle_writeback -->
+            WQ.operate
+        end
+        subgraph operate_read
+            subgraph handle_read
+                check_rq_empty{read queue is empty?} -.->
+                |no|handle_read_check_hit{rq packet is hit?}
+                subgraph handle_read_readlike_hit
+                    handle_read_readlike_hit_check_activate_prefetcher{should activate prefetcher?}-.->
+                    |yes|handle_read_readlike_hit_impl_pref_cache_operate[impl_prefetcher_cache_operate it depend on prefetcher]
+                    handle_read_readlike_hit_replace[update replacement policy]
+                    handle_read_readlike_hit_check_activate_prefetcher-.->|no|handle_read_readlike_hit_replace
+                    handle_read_readlike_hit_impl_pref_cache_operate-->handle_read_readlike_hit_replace
+                end
+                subgraph handle_read_readlike_miss
+                    handle_read_check_readlike_mshr{MSHR empty?} -.->
+                    |yes|handle_read_readlke_merge[merge dependency of merge and pkt]
+                    handle_read_check_prefetch_useful{mshr entry is prefetched and pkt is not prefetched} -.->
+                    |yes|handle_read_increase_pf_useful[increase usefulness of prefetcher]
+                    handle_read_check_mshr_full{mshr is ful?} -.->
+                    |no|handle_read_check_room_lower_queue{"lower queue(RQ or PQ) has room?"}-.->
+                    |no|handle_read_insert_pkt_to_mshr[insert packet to MSHR]
+                    handle_read_update_pkt_return[update pkt's to_return value as this level of cache]
+                    handle_read_check_read_or_pf{is this packet's prefetch flag is up?} -.->
+                    |yes|handle_read_push_to_lower_pq[push pkt to lower level's PQ]
+                    handle_read_push_to_lower_rq[push pkt to lower level's RQ]
+
+                    handle_read_check_activate_prefetcher{should activate prefetcher?}-.->
+                    |yes|handle_read_impl_pref_cache_operate[impl_prefetcher_cache_operate it depend on prefetcher]
+
+                    handle_read_check_readlike_mshr -.->|no|handle_read_check_mshr_full
+                    handle_read_readlke_merge --> handle_read_check_prefetch_useful
+                    handle_read_check_read_or_pf -.->|no|handle_read_push_to_lower_rq
+                    handle_read_insert_pkt_to_mshr --> handle_read_update_pkt_return
+                    handle_read_update_pkt_return --> handle_read_check_read_or_pf
+                    handle_read_increase_pf_useful --> handle_read_check_activate_prefetcher
+                    handle_read_check_prefetch_useful -.->|no|handle_read_check_activate_prefetcher
+                    handle_read_push_to_lower_pq -->handle_read_check_activate_prefetcher
+                    handle_read_push_to_lower_pq -->handle_read_check_activate_prefetcher
+                end
+                handle_read_check_hit -.->|yes|handle_read_readlike_hit
+                handle_read_check_hit -.->|no|handle_read_readlike_miss
+            end
+            subgraph va_translate_prefetches
+                check_vapq_ready{virtual address prefetch queue is empty?}-.->
+                |no|va_translate_prefetches_va_to_pa[translate va to pa] -->
+                va_translate_prefetches_add_pq[add pa to prefetch queue]
+            end
+            subgraph handle_prefetch
+                check_pq_ready{prefetch queue is empty?}-.->
+                |no|get_pkt_from_pq[get packet from prefetch queue]-->
+                check_handle_prefetch_hit{packet is hit?}
+                subgraph handle_prefetch_readlike_hit
+                    handle_prefetch_readlike_hit_check_activate_prefetcher{should activate prefetcher?}-.->
+                    |yes|handle_prefetch_readlike_hit_impl_pref_cache_operate[impl_prefetcher_cache_operate it depend on prefetcher]
+                    handle_prefetch_readlike_hit_replace[update replacement policy]
+                    handle_prefetch_readlike_hit_check_activate_prefetcher-.->|no|handle_prefetch_readlike_hit_replace
+                    handle_prefetch_readlike_hit_impl_pref_cache_operate-->handle_prefetch_readlike_hit_replace
+                end
+                subgraph handle_prefetch_readlike_miss
+                    handle_prefetch_check_readlike_mshr{MSHR empty?} -.->
+                    |yes|handle_prefetch_readlke_merge[merge dependency of merge and pkt]
+                    handle_prefetch_check_prefetch_useful{mshr entry is prefetched and pkt is not prefetched} -.->
+                    |yes|handle_prefetch_increase_pf_useful[increase usefulness of prefetcher]
+                    handle_prefetch_check_mshr_full{mshr is ful?} -.->
+                    |no|handle_prefetch_check_room_lower_queue{"lower queue(RQ or PQ) has room?"}-.->
+                    |no|handle_prefetch_insert_pkt_to_mshr[insert packet to MSHR]
+                    handle_prefetch_update_pkt_return[update pkt's to_return value as this level of cache]
+                    handle_prefetch_check_read_or_pf{is this packet's prefetch flag is up?} -.->
+                    |yes|handle_prefetch_push_to_lower_pq[push pkt to lower level's PQ]
+                    handle_prefetch_push_to_lower_rq[push pkt to lower level's RQ]
+
+                    handle_prefetch_check_activate_prefetcher{should activate prefetcher?}-.->
+                    |yes|handle_prefetch_impl_pref_cache_operate[impl_prefetcher_cache_operate it depend on prefetcher]
+
+                    handle_prefetch_check_readlike_mshr -.->|no|handle_prefetch_check_mshr_full
+                    handle_prefetch_readlke_merge --> handle_prefetch_check_prefetch_useful
+                    handle_prefetch_check_read_or_pf -.->|no|handle_prefetch_push_to_lower_rq
+                    handle_prefetch_insert_pkt_to_mshr --> handle_prefetch_update_pkt_return
+                    handle_prefetch_update_pkt_return --> handle_prefetch_check_read_or_pf
+                    handle_prefetch_increase_pf_useful --> handle_prefetch_check_activate_prefetcher
+                    handle_prefetch_check_prefetch_useful -.->|no|handle_prefetch_check_activate_prefetcher
+                    handle_prefetch_push_to_lower_pq -->handle_prefetch_check_activate_prefetcher
+                    handle_prefetch_push_to_lower_pq -->handle_prefetch_check_activate_prefetcher
+                end
+                check_handle_prefetch_hit -.->|yes|handle_prefetch_readlike_hit
+                check_handle_prefetch_hit -.->|yes|handle_prefetch_readlike_miss
+            end
+            subgraph RQ.operate
+            end
+            subgraph PQ.operate
+            end
+            subgraph VAPQ.operate
+            end
+
+            handle_read -->
+            va_translate_prefetches -->
+            handle_prefetch -->
+            RQ.operate -->
+            PQ.operate -->
+            VAPQ.operate
+        end
+        subgraph impl_pref_cycle_operate
+            prefetch_type[depend on prefetcher]
+        end
+
+        operate_write -->
+        operate_read -->
+        impl_pref_cycle_operate
+        class handle_prefetch,handle_read_readlike_hit_check_activate_prefetcher,handle_read_readlike_hit_impl_pref_cache_operate,check_vapq_ready,va_translate_prefetches_add_pq,handle_read_increase_pf_useful,handle_read_check_prefetch_useful,handle_read_check_activate_prefetcher,handle_read_impl_pref_cache_operate,impl_pref_cache_operate,handle_writeback_check_prefetched_block1,handle_writeback_increase_pf_useless,handle_writeback_check_prefetched_block2,handle_writeback_increase_pf_fill,handle_writeback_update_prefetcher,check_activate_prefetcher,increase_pf_useful,check_prefetch_useful,check_prefetched_block1,increase_pf_useless,check_prefetched_block2,increase_pf_fill,update_prefetcher prefetcher
