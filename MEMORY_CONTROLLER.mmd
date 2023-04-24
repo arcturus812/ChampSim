@@ -1,0 +1,37 @@
+graph TD
+    classDef highlight fill:#ffcc00,stroke:#ff9900,stroke-width:2px;
+    classDef prefetcher fill:#aaaa00,stroke:#ff2200,stroke-width:4px;
+
+    get_channel[get channel]
+    check_req_in_channel{active request remained in this channel?}-.->
+    |yes|finish_request[finish active request by return to upper mem?]-->
+    check_queue_occupancy[get write/read queue occupancy by counting] -->
+    balansing_wq_rq{write/read mode? and empty write/read queue?}-.->
+    |yes|leave_row[leave active request on charged row]-->
+    invert_mode[invert mode to another]
+
+    get_req_from_bank[look for the request from bank]-->
+    check_bus_available{check bus state is available}-.->
+    |yes|put_req_on_dbus[put current request on the data bus]
+    bus_is_congested[increase congested bus count]
+
+    check_pkt_for_schedule[get next pkt for the schedule]-->
+    get_dram_loc[get rank,bank,row based on address]-->
+    check_valid_idx{dram bank index is valid?}-.->
+    |yes|check_row_hit{row index same as opened index of bank?}-->
+    |yes|row_hit_flag_up[set row buffer hit flag]
+    make_busy[make this row is busy]
+
+    get_channel-->check_req_in_channel
+    check_req_in_channel-.->|no|check_queue_occupancy
+    balansing_wq_rq-.->|no|get_req_from_bank
+    invert_mode-->get_req_from_bank
+    check_bus_available-.->|no|bus_is_congested
+    bus_is_congested-->check_pkt_for_schedule
+    put_req_on_dbus-->check_pkt_for_schedule
+    row_hit_flag_up-->make_busy
+    check_row_hit-.->|no|make_busy
+    
+    %%subgraph 
+    %%end
+    %%class prefetcher
