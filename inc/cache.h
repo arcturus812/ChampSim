@@ -33,7 +33,7 @@
 
 extern std::array<O3_CPU*, NUM_CPUS> ooo_cpu;
 
-class CACHE : public champsim::operable, public MemoryRequestConsumer, public MemoryRequestProducer
+class CACHE : public champsim::operable, public MemoryRequestConsumer, public DoubleMemoryRequestProducer
 {
 public:
   uint32_t cpu;
@@ -62,6 +62,9 @@ public:
 
   uint64_t sim_access[NUM_CPUS][NUM_TYPES] = {}, sim_hit[NUM_CPUS][NUM_TYPES] = {}, sim_miss[NUM_CPUS][NUM_TYPES] = {}, roi_access[NUM_CPUS][NUM_TYPES] = {},
            roi_hit[NUM_CPUS][NUM_TYPES] = {}, roi_miss[NUM_CPUS][NUM_TYPES] = {};
+  
+  // [PHW] for slow mem
+  uint64_t slow_access = 0, fast_access = 0;
 
   uint64_t RQ_ACCESS = 0, RQ_MERGED = 0, RQ_FULL = 0, RQ_TO_CACHE = 0, PQ_ACCESS = 0, PQ_MERGED = 0, PQ_FULL = 0, PQ_TO_CACHE = 0, WQ_ACCESS = 0, WQ_MERGED = 0,
            WQ_FULL = 0, WQ_FORWARD = 0, WQ_TO_CACHE = 0;
@@ -112,8 +115,8 @@ public:
   // constructor
   CACHE(std::string v1, double freq_scale, unsigned fill_level, uint32_t v2, int v3, uint32_t v5, uint32_t v6, uint32_t v7, uint32_t v8, uint32_t hit_lat,
         uint32_t fill_lat, uint32_t max_read, uint32_t max_write, std::size_t offset_bits, bool pref_load, bool wq_full_addr, bool va_pref,
-        unsigned pref_act_mask, MemoryRequestConsumer* ll, pref_t pref, repl_t repl)
-      : champsim::operable(freq_scale), MemoryRequestConsumer(fill_level), MemoryRequestProducer(ll), NAME(v1), NUM_SET(v2), NUM_WAY(v3), WQ_SIZE(v5),
+        unsigned pref_act_mask, MemoryRequestConsumer* ll, MemoryRequestConsumer* ll_slow, pref_t pref, repl_t repl)
+      : champsim::operable(freq_scale), MemoryRequestConsumer(fill_level), DoubleMemoryRequestProducer(ll, ll_slow), NAME(v1), NUM_SET(v2), NUM_WAY(v3), WQ_SIZE(v5),
         RQ_SIZE(v6), PQ_SIZE(v7), MSHR_SIZE(v8), HIT_LATENCY(hit_lat), FILL_LATENCY(fill_lat), OFFSET_BITS(offset_bits), MAX_READ(max_read),
         MAX_WRITE(max_write), prefetch_as_load(pref_load), match_offset_bits(wq_full_addr), virtual_prefetch(va_pref), pref_activate_mask(pref_act_mask),
         repl_type(repl), pref_type(pref)

@@ -1,0 +1,37 @@
+/home/caslab/workspace/sim/ChampSim/bin/champsim --warmup_instructions 200000000 --simulation_instructions 500000000/ /home/caslab/workspace/sim/traces/speccpu_by_champsim603.bwaves_s-3699B.champsimtrace.xz
+start simulation for 603.bwaves_s-3699B.champsimtrace.xz
+
+*** ChampSim Multicore Out-of-Order Simulator ***
+
+Warmup Instructions: 200000000
+Simulation Instructions: 500000000
+Number of CPUs: 1
+Off-chip DRAM Size: 4 GiB Channels: 1 Width: 64-bit Data Rate: 3200 MT/s
+
+VirtualMemory physical capacity: 8588881920 num_ppages: 2096895
+VirtualMemory page size: 4096 log2_page_size: 12
+
+CPU 0 runs /home/caslab/workspace/sim/traces/speccpu_by_champsim/603.bwaves_s-3699B.champsimtrace.xz
+CPU 0 Bimodal branch predictor
+Basic BTB sets: 1024 ways: 8 indirect buffer size: 4096 RAS size: 64
+LLC next line prefetcher
+WARNING: The extended signature CACHE::prefetch_line(ip, base_addr, pf_addr, fill_this_level, prefetch_metadata) is deprecated.
+WARNING: Use CACHE::prefetch_line(pf_addr, fill_this_level, prefetch_metadata) instead.
+Heartbeat CPU 0 instructions: 10000000 cycles: 2685170 heartbeat IPC: 3.72416 cumulative IPC: 3.72416 (Simulation time: 0 hr 0 min 21 sec) 
+Heartbeat CPU 0 instructions: 20000002 cycles: 5318723 heartbeat IPC: 3.79715 cumulative IPC: 3.7603 (Simulation time: 0 hr 0 min 41 sec) 
+Heartbeat CPU 0 instructions: 30000003 cycles: 7940280 heartbeat IPC: 3.81453 cumulative IPC: 3.7782 (Simulation time: 0 hr 1 min 2 sec) 
+Heartbeat CPU 0 instructions: 40000003 cycles: 10625403 heartbeat IPC: 3.72422 cumulative IPC: 3.76456 (Simulation time: 0 hr 1 min 23 sec) 
+Heartbeat CPU 0 instructions: 50000002 cycles: 13309255 heartbeat IPC: 3.72599 cumulative IPC: 3.75678 (Simulation time: 0 hr 1 min 43 sec) 
+Heartbeat CPU 0 instructions: 60000004 cycles: 15989474 heartbeat IPC: 3.73104 cumulative IPC: 3.75247 (Simulation time: 0 hr 2 min 4 sec) 
+Heartbeat CPU 0 instructions: 70000000 cycles: 18666385 heartbeat IPC: 3.73565 cumulative IPC: 3.75006 (Simulation time: 0 hr 2 min 25 sec) 
+Heartbeat CPU 0 instructions: 80000004 cycles: 21342368 heartbeat IPC: 3.73695 cumulative IPC: 3.74841 (Simulation time: 0 hr 2 min 45 sec) 
+Heartbeat CPU 0 instructions: 90000001 cycles: 24020480 heartbeat IPC: 3.73397 cumulative IPC: 3.7468 (Simulation time: 0 hr 3 min 6 sec) 
+Heartbeat CPU 0 instructions: 100000001 cycles: 26682885 heartbeat IPC: 3.756 cumulative IPC: 3.74772 (Simulation time: 0 hr 3 min 27 sec) 
+Heartbeat CPU 0 instructions: 110000002 cycles: 29347074 heartbeat IPC: 3.75349 cumulative IPC: 3.74824 (Simulation time: 0 hr 3 min 47 sec) 
+Heartbeat CPU 0 instructions: 120000002 cycles: 32009015 heartbeat IPC: 3.75666 cumulative IPC: 3.74894 (Simulation time: 0 hr 4 min 8 sec) 
+Heartbeat CPU 0 instructions: 130000000 cycles: 34661399 heartbeat IPC: 3.77019 cumulative IPC: 3.75057 (Simulation time: 0 hr 4 min 29 sec) 
+Heartbeat CPU 0 instructions: 140000000 cycles: 37292412 heartbeat IPC: 3.80082 cumulative IPC: 3.75411 (Simulation time: 0 hr 4 min 49 sec) 
+Heartbeat CPU 0 instructions: 150000004 cycles: 39945236 heartbeat IPC: 3.76957 cumulative IPC: 3.75514 (Simulation time: 0 hr 5 min 10 sec) 
+Heartbeat CPU 0 instructions: 160000001 cycles: 42603588 heartbeat IPC: 3.76173 cumulative IPC: 3.75555 (Simulation time: 0 hr 5 min 30 sec) 
+Heartbeat CPU 0 instructions: 170000002 cycles: 45238923 heartbeat IPC: 3.79458 cumulative IPC: 3.75783 (Simulation time: 0 hr 5 min 50 sec) 
+Caught signal: 2

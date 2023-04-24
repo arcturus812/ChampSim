@@ -1,0 +1,2 @@
+/home/caslab/workspace/sim/ChampSim/bin/champsim --warmup_instructions 200000000 --simulation_instructions 500000000/ /home/caslab/workspace/sim/traces/speccpu_by_champsim654.roms_s-293B.champsimtrace.xz
+start simulation for 654.roms_s-293B.champsimtrace.xz

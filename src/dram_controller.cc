@@ -239,6 +239,11 @@ uint32_t MEMORY_CONTROLLER::dram_get_row(uint64_t address)
 uint32_t MEMORY_CONTROLLER::get_occupancy(uint8_t queue_type, uint64_t address)
 {
   uint32_t channel = dram_get_channel(address);
+  /* [PHW] queue_type
+   * 1: rq
+   * 2: wq
+   * 3: ? but goto 1(rq)
+  */
   if (queue_type == 1)
     return std::count_if(std::begin(channels[channel].RQ), std::end(channels[channel].RQ), is_valid<PACKET>());
   else if (queue_type == 2)

@@ -261,9 +261,20 @@ bool CACHE::readlike_miss(PACKET& handle_pkt)
     bool is_read = prefetch_as_load || (handle_pkt.type != PREFETCH);
 
     // check to make sure the lower level queue has room for this read miss
+    // [PHW] if i add a second level memory request consumer, check pa to choice the right consumer.
     int queue_type = (is_read) ? 1 : 3;
-    if (lower_level->get_occupancy(queue_type, handle_pkt.address) == lower_level->get_size(queue_type, handle_pkt.address))
-      return false;
+    if(this->NAME == "LLC"){
+      if(handle_pkt.address > vmem.fast_phys_addr_end){ //[PHW] at this moment, physical address already revealed?
+        if (lower_level_slow->get_occupancy(queue_type, handle_pkt.address) == lower_level_slow->get_size(queue_type, handle_pkt.address))
+          return false;
+      }else{
+        if (lower_level->get_occupancy(queue_type, handle_pkt.address) == lower_level->get_size(queue_type, handle_pkt.address))
+          return false;
+      }
+    }else{
+      if (lower_level->get_occupancy(queue_type, handle_pkt.address) == lower_level->get_size(queue_type, handle_pkt.address))
+        return false;
+    }
 
     // Allocate an MSHR
     if (handle_pkt.fill_level <= fill_level) {
@@ -277,10 +288,31 @@ bool CACHE::readlike_miss(PACKET& handle_pkt)
     else
       handle_pkt.to_return.clear();
 
-    if (!is_read)
-      lower_level->add_pq(&handle_pkt);
-    else
-      lower_level->add_rq(&handle_pkt);
+    if(this->NAME == "LLC"){
+      // std::cout << "[LLC-rq]addr:\t0x" << std::hex << handle_pkt.address << std::endl;
+      if(handle_pkt.address > vmem.fast_phys_addr_end){ //[PHW] at this moment, physical address already revealed?
+      // std::cout << "[LLC-rq]addr:\t0x" << std::hex << handle_pkt.address << std::endl;
+      // if(handle_pkt.address != NULL && handle_pkt.address > vmem.fast_phys_addr_end){
+        // std::cout << "DEBUG SLOW1" << std::endl;
+        slow_access++;
+        if (!is_read)
+          lower_level_slow->add_pq(&handle_pkt);
+        else
+          lower_level_slow->add_rq(&handle_pkt);
+      }else{
+        fast_access++;
+        if (!is_read)
+          lower_level->add_pq(&handle_pkt);
+        else
+          lower_level->add_rq(&handle_pkt);
+      }
+    }else{
+        fast_access++;
+      if (!is_read)
+        lower_level->add_pq(&handle_pkt);
+      else
+        lower_level->add_rq(&handle_pkt);
+    }
   }
 
   // update prefetcher on load instructions and prefetches from upper levels
@@ -311,14 +343,36 @@ bool CACHE::filllike_miss(std::size_t set, std::size_t way, PACKET& handle_pkt)
   assert(handle_pkt.type != WRITEBACK || !bypass);
 
   BLOCK& fill_block = block[set * NUM_WAY + way];
-  bool evicting_dirty = !bypass && (lower_level != NULL) && fill_block.dirty;
+  //[PHW] for slow
+  bool evicting_dirty;
+  if (this->NAME == "LLC") {
+    if(handle_pkt.address > vmem.fast_phys_addr_end){
+        // std::cout << "DEBUG SLOW2" << std::endl;
+      // slow_access++;
+      evicting_dirty = !bypass && (lower_level_slow != NULL) && fill_block.dirty;
+    }else{
+      evicting_dirty = !bypass && (lower_level != NULL) && fill_block.dirty;
+    }
+  }else{
+    evicting_dirty = !bypass && (lower_level != NULL) && fill_block.dirty;
+  }
   uint64_t evicting_address = 0;
 
   if (!bypass) {
     if (evicting_dirty) {
       PACKET writeback_packet;
 
-      writeback_packet.fill_level = lower_level->fill_level;
+      if (this->NAME == "LLC") {
+        if (writeback_packet.address > vmem.fast_phys_addr_end) { //[PHW] at this moment, physical address already revealed?
+          // std::cout << "DEBUG SLOW3" << std::endl;
+          // slow_access++;
+          writeback_packet.fill_level = lower_level_slow->fill_level;
+        }else{
+          writeback_packet.fill_level = lower_level->fill_level;
+        }
+      }else{
+        writeback_packet.fill_level = lower_level->fill_level;
+      }
       writeback_packet.cpu = handle_pkt.cpu;
       writeback_packet.address = fill_block.address;
       writeback_packet.data = fill_block.data;
@@ -326,9 +380,26 @@ bool CACHE::filllike_miss(std::size_t set, std::size_t way, PACKET& handle_pkt)
       writeback_packet.ip = 0;
       writeback_packet.type = WRITEBACK;
 
-      auto result = lower_level->add_wq(&writeback_packet);
-      if (result == -2)
-        return false;
+      if (this->NAME == "LLC") {
+        // std::cout << "[LLC-wq]addr:\t0x" << std::hex << writeback_packet.address << std::endl;
+        if (writeback_packet.address > vmem.fast_phys_addr_end) { //[PHW] at this moment, physical address already revealed?
+          // std::cout << "DEBUG SLOW4" << std::endl;
+          slow_access++;
+          auto result = lower_level_slow->add_wq(&writeback_packet);
+          if (result == -2)
+            return false;
+        } else {
+        fast_access++;
+          auto result = lower_level->add_wq(&writeback_packet);
+          if (result == -2)
+            return false;
+        }
+      } else {
+        fast_access++;
+        auto result = lower_level->add_wq(&writeback_packet);
+        if (result == -2)
+          return false;
+      }
     }
 
     if (ever_seen_data)

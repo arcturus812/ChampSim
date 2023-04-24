@@ -44,6 +44,7 @@ auto start_time = time(NULL);
 champsim::deprecated_clock_cycle current_core_cycle;
 
 extern MEMORY_CONTROLLER DRAM;
+extern MEMORY_CONTROLLER MEM_SLOW;
 extern VirtualMemory vmem;
 extern std::array<O3_CPU*, NUM_CPUS> ooo_cpu;
 extern std::array<CACHE*, NUM_CACHES> caches;
@@ -111,6 +112,12 @@ void print_roi_stats(uint32_t cpu, CACHE* cache)
 
     cout << cache->NAME;
     cout << " AVERAGE MISS LATENCY: " << (1.0 * (cache->total_miss_latency)) / TOTAL_MISS << " cycles" << endl;
+
+    if ( cache->NAME == "LLC"){
+    cout << cache->NAME << endl; 
+    cout << "FAST_ACCESS:\t" << cache->fast_access << endl;
+    cout << "SLOW_ACCESS:\t" << cache->slow_access << endl;
+    }
     // cout << " AVERAGE MISS LATENCY: " <<
     // (cache->total_miss_latency)/TOTAL_MISS << " cycles " <<
     // cache->total_miss_latency << "/" << TOTAL_MISS<< endl;
@@ -237,6 +244,32 @@ void print_dram_stats()
       std::cout << "-";
 
     std::cout << std::endl;
+  }
+  std::cout << "SLOW-DRAM Statistics" << std::endl;
+  for (uint32_t i = 0; i < DRAM_CHANNELS; i++) {
+    std::cout << " CHANNEL " << i << std::endl;
+
+    auto& channel = MEM_SLOW.channels[i];
+    std::cout << " RQ ROW_BUFFER_HIT: " << std::setw(10) << channel.RQ_ROW_BUFFER_HIT << " ";
+    std::cout << " ROW_BUFFER_MISS: " << std::setw(10) << channel.RQ_ROW_BUFFER_MISS;
+    std::cout << std::endl;
+
+    std::cout << " DBUS AVG_CONGESTED_CYCLE: ";
+    if (channel.dbus_count_congested)
+      std::cout << std::setw(10) << ((double)channel.dbus_cycle_congested / channel.dbus_count_congested);
+    else
+      std::cout << "-";
+    std::cout << std::endl;
+
+    std::cout << " WQ ROW_BUFFER_HIT: " << std::setw(10) << channel.WQ_ROW_BUFFER_HIT << " ";
+    std::cout << " ROW_BUFFER_MISS: " << std::setw(10) << channel.WQ_ROW_BUFFER_MISS << " ";
+    std::cout << " FULL: " << std::setw(10) << channel.WQ_FULL;
+    std::cout << std::endl;
+
+    std::cout << std::endl;
+
+    total_congested_cycle += channel.dbus_cycle_congested;
+    total_congested_count += channel.dbus_count_congested;
   }
 }
 
@@ -365,8 +398,8 @@ int main(int argc, char** argv)
     }
   }
 
-  cout << "Warmup Instructions: " << warmup_instructions << endl;
-  cout << "Simulation Instructions: " << simulation_instructions << endl;
+  cout << "Warmup Instructions:\t" << warmup_instructions << endl;
+  cout << "Simulation Instructions:\t" << simulation_instructions << endl;
   cout << "Number of CPUs: " << NUM_CPUS << endl;
 
   long long int dram_size = DRAM_CHANNELS * DRAM_RANKS * DRAM_BANKS * DRAM_ROWS * DRAM_COLUMNS * BLOCK_SIZE / 1024 / 1024; // in MiB
@@ -378,8 +411,10 @@ int main(int argc, char** argv)
   std::cout << " Channels: " << DRAM_CHANNELS << " Width: " << 8 * DRAM_CHANNEL_WIDTH << "-bit Data Rate: " << DRAM_IO_FREQ << " MT/s" << std::endl;
 
   std::cout << std::endl;
-  std::cout << "VirtualMemory physical capacity: " << std::size(vmem.ppage_free_list) * vmem.page_size;
-  std::cout << " num_ppages: " << std::size(vmem.ppage_free_list) << std::endl;
+  std::cout << "VirtualMemory fast physical capacity: " << std::size(vmem.ppage_free_list) * vmem.page_size;
+  std::cout << " num_fast_ppages: " << std::size(vmem.ppage_free_list) << std::endl;
+  std::cout << "VirtualMemory slow physical capacity: " << std::size(vmem.ppage_free_list_slow) * vmem.page_size;
+  std::cout << " num_slow_ppages: " << std::size(vmem.ppage_free_list_slow) << std::endl;
   std::cout << "VirtualMemory page size: " << PAGE_SIZE << " log2_page_size: " << LOG2_PAGE_SIZE << std::endl;
 
   std::cout << std::endl;

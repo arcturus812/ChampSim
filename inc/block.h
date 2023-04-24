@@ -24,7 +24,7 @@
 #include "circular_buffer.hpp"
 #include "instruction.h"
 
-class MemoryRequestProducer;
+class DoubleMemoryRequestProducer;
 class LSQ_ENTRY;
 
 // message packet
@@ -42,7 +42,7 @@ public:
 
   std::vector<std::vector<LSQ_ENTRY>::iterator> lq_index_depend_on_me = {}, sq_index_depend_on_me = {};
   std::vector<champsim::circular_buffer<ooo_model_instr>::iterator> instr_depend_on_me;
-  std::vector<MemoryRequestProducer*> to_return;
+  std::vector<DoubleMemoryRequestProducer*> to_return;
 
   uint8_t translation_level = 0, init_translation_level = 0;
 };

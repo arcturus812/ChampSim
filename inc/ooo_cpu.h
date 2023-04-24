@@ -32,11 +32,11 @@ using namespace std;
 
 class CACHE;
 
-class CacheBus : public MemoryRequestProducer
+class CacheBus : public DoubleMemoryRequestProducer
 {
 public:
   champsim::circular_buffer<PACKET> PROCESSED;
-  CacheBus(std::size_t q_size, MemoryRequestConsumer* ll) : MemoryRequestProducer(ll), PROCESSED(q_size) {}
+  CacheBus(std::size_t q_size, MemoryRequestConsumer* ll, MemoryRequestConsumer* ll_slow) : DoubleMemoryRequestProducer(ll, ll_slow), PROCESSED(q_size) {}
   void return_data(PACKET* packet);
 };
 
@@ -157,7 +157,7 @@ public:
         DISPATCH_BUFFER(dispatch_buffer_size, dispatch_latency), DECODE_BUFFER(decode_buffer_size, decode_latency), ROB(rob_size), LQ(lq_size), SQ(sq_size),
         FETCH_WIDTH(fetch_width), DECODE_WIDTH(decode_width), DISPATCH_WIDTH(dispatch_width), SCHEDULER_SIZE(schedule_width), EXEC_WIDTH(execute_width),
         LQ_WIDTH(lq_width), SQ_WIDTH(sq_width), RETIRE_WIDTH(retire_width), BRANCH_MISPREDICT_PENALTY(mispredict_penalty), SCHEDULING_LATENCY(schedule_latency),
-        EXEC_LATENCY(execute_latency), ITLB_bus(rob_size, itlb), DTLB_bus(rob_size, dtlb), L1I_bus(rob_size, l1i), L1D_bus(rob_size, l1d),
+        EXEC_LATENCY(execute_latency), ITLB_bus(rob_size, itlb, NULL), DTLB_bus(rob_size, dtlb, NULL), L1I_bus(rob_size, l1i, NULL), L1D_bus(rob_size, l1d, NULL),
         bpred_type(bpred_type), btb_type(btb_type), ipref_type(ipref_type)
   {
   }

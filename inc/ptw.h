@@ -47,7 +47,7 @@ public:
   void fill_cache(uint64_t next_level_paddr, uint64_t vaddr);
 };
 
-class PageTableWalker : public champsim::operable, public MemoryRequestConsumer, public MemoryRequestProducer
+class PageTableWalker : public champsim::operable, public MemoryRequestConsumer, public DoubleMemoryRequestProducer
 {
 public:
   const std::string NAME;

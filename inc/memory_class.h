@@ -75,4 +75,16 @@ protected:
   explicit MemoryRequestProducer(MemoryRequestConsumer* ll) : lower_level(ll) {}
 };
 
+class DoubleMemoryRequestProducer
+{
+  public:
+    MemoryRequestConsumer* lower_level;
+    MemoryRequestConsumer* lower_level_slow;
+    virtual void return_data(PACKET* packet) = 0;
+
+  protected:
+    DoubleMemoryRequestProducer() {}
+    explicit DoubleMemoryRequestProducer(MemoryRequestConsumer* ll, MemoryRequestConsumer* ll_slow) : lower_level(ll), lower_level_slow(ll_slow) {}
+};
+
 #endif

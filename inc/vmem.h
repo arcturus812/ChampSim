@@ -26,6 +26,10 @@
 
 #define PTE_BYTES 8
 
+//[PHW] page rate definition
+#define PMEM_FAST_RATE 0.25
+#define PMEM_SLOW_RATE (1-PMEM_FAST_RATE)
+
 class VirtualMemory
 {
 private:
@@ -38,7 +42,11 @@ public:
   const uint64_t minor_fault_penalty;
   const uint32_t pt_levels;
   const uint32_t page_size; // Size of a PTE page
+  uint64_t capacity_fast;
+  uint64_t capacity_slow;
+  uint64_t fast_phys_addr_end;
   std::deque<uint64_t> ppage_free_list;
+  std::deque<uint64_t> ppage_free_list_slow;
 
   // capacity and pg_size are measured in bytes, and capacity must be a multiple
   // of pg_size
