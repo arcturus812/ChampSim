@@ -1,0 +1,13 @@
+omkarshinge/ChampSim:
+  - Branch: berti_prefetcher_port | Patterns: berti
+  - Branch: ipcp_rl | Patterns: berti
+  - Branch: isca2020_ipcp_port | Patterns: berti
+Miglia12/ChampSim:
+  - Branch: dram_prefetch_devel | Patterns: berti
+  - Branch: dram_prefetch | Patterns: berti
+  - Branch: master | Patterns: berti
+  - Branch: old_champsim_berti_tri_buffered | Patterns: berti
+  - Branch: old_champsim_dram_prefetch | Patterns: berti
+  - Branch: old_champsim | Patterns: berti
+  - Branch: oracle_dram_prefetch_histograms | Patterns: berti
+  - Branch: oracle_dram_prefetch | Patterns: berti

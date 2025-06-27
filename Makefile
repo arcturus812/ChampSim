@@ -27,6 +27,15 @@ build_ids:=
 executable_name:=
 prereq_for_generated:=
 
+## Debug flag
+ifdef DEBUG
+override CXXFLAGS += -g3 -Og
+endif
+
+# DEBUG target
+DEBUG: DEBUG=1
+DEBUG: all
+
 # List all subdirectories of a given directory
 # $1 - parent directory
 ls_dirs = $(patsubst %/,%,$(filter %/,$(wildcard $1/*/)))
