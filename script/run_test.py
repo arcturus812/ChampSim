@@ -7,12 +7,12 @@ from concurrent.futures import ThreadPoolExecutor
 import exp_env
 import common
 
-# WARM_INST = 1000000 #1M
-# SIM_INST = 5000000 #5M
+WARM_INST = 1000000 #1M
+SIM_INST = 5000000 #5M
 # WARM_INST = 2000000 # 2M
-# SIM_INST = 10000000 # 10M
-WARM_INST = 20000000 # 20M
-SIM_INST = 100000000 # 100M
+#  SIM_INST = 10000000 # 10M
+# WARM_INST = 20000000 # 20M
+# SIM_INST = 100000000 # 100M
 # TEST_TRACE=exp_env.TRACE_ROOT + "/spec/410.bwaves-1963B.champsimtrace.xz"
 # TEST_TRACE=exp_env.TRACE_ROOT + "/micro/sequential_1g_4iter.champsim"
 TEST_TRACE=exp_env.TRACE_ROOT + "/micro/sequential_1g_4iter_app64.champsim"

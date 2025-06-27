@@ -147,7 +147,16 @@ class Fragment:
 
         executable_basename, elements, modules_to_compile, module_info, config_file = parsed_config
 
-        joined_module_info = util.subdict(util.chain(*module_info.values()), modules_to_compile) # remove module type tag
+        # Filter out non-dictionary values from module_info before chaining
+        filtered_module_info = {}
+        for key, value in module_info.items():
+            if isinstance(value, dict):
+                filtered_module_info[key] = value
+            else:
+                if verbose:
+                    print(f'Warning: module_info[{key}] is not a dictionary, skipping: {type(value)}')
+        
+        joined_module_info = util.subdict(util.chain(*filtered_module_info.values()), modules_to_compile) # remove module type tag
         executable = os.path.join(bindir_name, executable_basename)
         if verbose:
             print('For Executable', executable)
@@ -164,8 +173,9 @@ class Fragment:
 
         fileparts = [
             # Instantiation file
-            (os.path.join(objdir_name, 'core_inst.inc'), cxx_file(get_instantiation_header(len(elements['cores']), config_file, build_id=build_id))),
-            (os.path.join(objdir_name, 'core_inst.cc.inc'), cxx_file(get_instantiation_lines(build_id=build_id, **elements))),
+            (os.path.join(objdir_name, 'core_inst.inc'), cxx_file(get_instantiation_header(len(elements['cores']),
+                                                                                            config_file, build_id=build_id, tma=elements.get('tma', False), pmem=elements.get('pmem', None)))),
+            (os.path.join(objdir_name, 'core_inst.cc.inc'), cxx_file(get_instantiation_lines(**elements, build_id=build_id))),
 
             # Makefile generation
             (os.path.join(makedir_name, '_configuration.mk'), (
@@ -221,7 +231,7 @@ class FileWriter:
             parsed_config,
             bindir_name=bindir_name or self.bindir_name,
             srcdir_names=srcdir_names or [],
-            objdir_name=os.path.abspath(objdir_name or self.objdir_name),
+            objdir_name=os.path.abspath(objdir_name or self.objdir_name) if (objdir_name or self.objdir_name) else None,
             makedir_name=makedir_name or self.makedir_name,
             verbose=self.verbose
         ))

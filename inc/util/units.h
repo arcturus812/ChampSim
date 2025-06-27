@@ -237,6 +237,15 @@ auto constexpr operator>=(const size<Rep1, Unit1>& lhs, const size<Rep2, Unit2>&
 }
 
 /**
+ * Convenience definitions for common data types
+ */
+using bytes = size<long long, std::ratio<1>>;
+using kibibytes = size<long long, kibi>;
+using mebibytes = size<long long, mebi>;
+using gibibytes = size<long long, gibi>;
+using tebibytes = size<long long, tebi>;
+
+/**
  * Provides a set of literals to the user.
  *
  *     1024_kiB => champsim::data::kibibytes{1024}

@@ -29,7 +29,7 @@
 #include "phase_info.h"
 #include "tracereader.h"
 
-constexpr int DEADLOCK_CYCLE{500};
+constexpr int DEADLOCK_CYCLE{50000};
 
 const auto start_time = std::chrono::steady_clock::now();
 
@@ -175,6 +175,12 @@ phase_stats do_phase(const phase_info& phase, environment& env, std::vector<trac
   std::transform(std::begin(dram.channels), std::end(dram.channels), std::back_inserter(stats.sim_dram_stats),
                  [](const DRAM_CHANNEL& chan) { return chan.sim_stats; });
   std::transform(std::begin(dram.channels), std::end(dram.channels), std::back_inserter(stats.roi_dram_stats),
+                 [](const DRAM_CHANNEL& chan) { return chan.roi_stats; });
+
+  auto far_mem = env.far_mem_view();
+  std::transform(std::begin(far_mem.channels), std::end(far_mem.channels), std::back_inserter(stats.sim_far_mem_stats),
+                 [](const DRAM_CHANNEL& chan) { return chan.sim_stats; });
+  std::transform(std::begin(far_mem.channels), std::end(far_mem.channels), std::back_inserter(stats.roi_far_mem_stats),
                  [](const DRAM_CHANNEL& chan) { return chan.roi_stats; });
 
   return stats;

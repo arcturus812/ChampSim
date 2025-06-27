@@ -61,6 +61,7 @@ struct cache_builder_base {
   std::vector<access_type> m_pref_act_mask{access_type::LOAD, access_type::PREFETCH};
   std::vector<champsim::channel*> m_uls{};
   champsim::channel* m_ll{};
+  champsim::channel* m_ll_far{nullptr};
   champsim::channel* m_lt{nullptr};
 };
 } // namespace detail
@@ -227,6 +228,11 @@ public:
    * Specify the lower level of the cache.
    */
   self_type& lower_level(champsim::channel* ll_);
+
+  /**
+   * Specify the lower level far of the cache.
+   */
+  self_type& lower_level_far(champsim::channel* ll_far_);
 
   /**
    * Specify the translator (TLB) for this cache.
@@ -504,6 +510,13 @@ template <typename P, typename R>
 auto champsim::cache_builder<P, R>::lower_level(champsim::channel* ll_) -> self_type&
 {
   m_ll = ll_;
+  return *this;
+}
+
+template <typename P, typename R>
+auto champsim::cache_builder<P, R>::lower_level_far(champsim::channel* ll_far_) -> self_type&
+{
+  m_ll_far = ll_far_;
   return *this;
 }
 

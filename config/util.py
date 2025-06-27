@@ -96,7 +96,17 @@ def combine_named(*iterables):
     Earlier parameters have priority over later parameters.
     '''
     key_func = operator.methodcaller('get', 'name', '')
-    items = ((key_func(d), d) for d in collect(itertools.chain(*iterables), key_func, star(chain)))
+    # Filter out non-dictionary items before processing
+    filtered_items = []
+    for iterable in iterables:
+        for item in iterable:
+            if isinstance(item, dict):
+                filtered_items.append(item)
+            else:
+                # Skip non-dictionary items
+                continue
+    
+    items = ((key_func(d), d) for d in collect(filtered_items, key_func, star(chain)))
     return dict(filter(operator.itemgetter(0), items))
 
 def upper_levels_for(system, name, key='lower_level'):

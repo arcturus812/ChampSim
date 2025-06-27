@@ -22,15 +22,19 @@
 #include <exception>
 #include <limits>
 
+#include "address.h"
 #include "extent.h"
 #include "util/bit_enum.h"
 #include "util/ratio.h"
+#include "util/units.h"
 
 extern const std::size_t NUM_CPUS;
 extern const unsigned BLOCK_SIZE;
 extern const unsigned PAGE_SIZE;
 extern const unsigned LOG2_BLOCK_SIZE;
 extern const unsigned LOG2_PAGE_SIZE;
+
+extern const std::size_t DRAM_MAX_ADDR;
 
 namespace champsim
 {
@@ -48,23 +52,6 @@ constexpr bool debug_print = false;
 template <typename Extent>
 class address_slice;
 
-namespace data
-{
-template <typename Rep, typename Unit>
-class size;
-
-/**
- * Convenience definitions for common data types
- */
-using bytes = size<long long, std::ratio<1>>;
-using kibibytes = size<long long, kibi>;
-using mebibytes = size<long long, mebi>;
-using gibibytes = size<long long, gibi>;
-using tebibytes = size<long long, tebi>;
-// using blocks = size<long long, std::ratio<BLOCK_SIZE>>;
-// using pages = size<long long, std::ratio<PAGE_SIZE>>;
-} // namespace data
-
 /**
  * Convenience definitions for commmon address slices
  */
@@ -77,12 +64,22 @@ using page_offset = address_slice<page_offset_extent>;
 /**
  * Get the lowest possible address for which the space between it and zero is the given size.
  */
-auto lowest_address_for_size(data::bytes sz) -> address;
+auto lowest_address_for_size(champsim::data::bytes sz) -> address;
 
 /**
  * Get the lowest possible address for which the space between it and zero is the given bit width.
  */
-auto lowest_address_for_width(data::bits width) -> address;
+auto lowest_address_for_width(champsim::data::bits width) -> address;
 } // namespace champsim
+
+inline bool is_far_addr(uint64_t addr)
+{
+  return addr >= DRAM_MAX_ADDR;
+}
+
+inline bool is_far_pfn(uint64_t pfn)
+{
+  return pfn >= (DRAM_MAX_ADDR >> LOG2_PAGE_SIZE);
+}
 
 #endif

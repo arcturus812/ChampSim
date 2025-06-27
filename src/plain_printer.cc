@@ -193,12 +193,19 @@ std::vector<std::string> champsim::plain_printer::format(champsim::phase_stats& 
     std::move(std::begin(sublines), std::end(sublines), std::back_inserter(lines));
   }
 
-  lines.emplace_back("");
-  lines.emplace_back("DRAM Statistics");
+  int cnt = 0;
   for (const auto& stat : stats.roi_dram_stats) {
+    lines.emplace_back("");
+    if(cnt == 0){
+      lines.emplace_back("DRAM Statistics");
+    }else{
+      lines.emplace_back("FAR MEM Statistics");
+    }
+
     auto sublines = format(stat);
     lines.emplace_back("");
     std::move(std::begin(sublines), std::end(sublines), std::back_inserter(lines));
+    cnt++;
   }
 
   return lines;

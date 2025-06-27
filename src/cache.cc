@@ -35,7 +35,7 @@
 CACHE::CACHE(CACHE&& other)
     : operable(other),
 
-      upper_levels(std::move(other.upper_levels)), lower_level(std::move(other.lower_level)), lower_translate(std::move(other.lower_translate)),
+      upper_levels(std::move(other.upper_levels)), lower_level(std::move(other.lower_level)), lower_level_far(std::move(other.lower_level_far)), lower_translate(std::move(other.lower_translate)),
 
       cpu(other.cpu), NAME(std::move(other.NAME)), NUM_SET(other.NUM_SET), NUM_WAY(other.NUM_WAY), MSHR_SIZE(other.MSHR_SIZE), PQ_SIZE(other.PQ_SIZE),
       HIT_LATENCY(other.HIT_LATENCY), FILL_LATENCY(other.FILL_LATENCY), OFFSET_BITS(other.OFFSET_BITS), block(std::move(other.block)), MAX_TAG(other.MAX_TAG),
@@ -58,6 +58,9 @@ auto CACHE::operator=(CACHE&& other) -> CACHE&
 
   this->upper_levels = std::move(other.upper_levels);
   this->lower_level = std::move(other.lower_level);
+  if (this->NAME == "LLC"){
+    this->lower_level_far = std::move(other.lower_level_far);
+  }
   this->lower_translate = std::move(other.lower_translate);
 
   this->cpu = other.cpu;
@@ -205,8 +208,18 @@ bool CACHE::handle_fill(const mshr_type& fill_mshr)
       fmt::print("[{}] {} evict address: {} v_address: {} prefetch_metadata: {}\n", NAME, __func__, writeback_packet.address, writeback_packet.v_address,
                  fill_mshr.data_promise->pf_metadata);
     }
+    bool success = false;
+    if(this->NAME == "LLC"){
+      if(::is_far_addr(writeback_packet.address.to<uint64_t>())){
+        success = lower_level_far->add_wq(writeback_packet);
+      }else{
+        success = lower_level->add_wq(writeback_packet);
+      }
+    }else{
+      success = lower_level->add_wq(writeback_packet);
+    }
 
-    auto success = lower_level->add_wq(writeback_packet);
+
     if (!success) {
       return false;
     }
@@ -354,7 +367,29 @@ bool CACHE::handle_miss(const tag_lookup_type& handle_pkt)
     }
 
     const bool send_to_rq = (prefetch_as_load || handle_pkt.type != access_type::PREFETCH);
-    bool success = send_to_rq ? lower_level->add_rq(mshr_pkt.second) : lower_level->add_pq(mshr_pkt.second);
+    // bool success = send_to_rq ? lower_level->add_rq(mshr_pkt.second) : lower_level->add_pq(mshr_pkt.second);
+    bool success = false;
+    if(this->NAME == "LLC"){
+      if(::is_far_addr(mshr_pkt.second.address.to<uint64_t>())){
+        if(send_to_rq){
+          success = lower_level_far->add_rq(mshr_pkt.second);
+        }else{
+          success = lower_level_far->add_pq(mshr_pkt.second);
+        }
+      }else{
+        if(send_to_rq){
+          success = lower_level->add_rq(mshr_pkt.second);
+        }else{
+          success = lower_level->add_pq(mshr_pkt.second);
+        }
+      }
+    }else{
+      if(send_to_rq){
+        success = lower_level->add_rq(mshr_pkt.second);
+      }else{
+        success = lower_level->add_pq(mshr_pkt.second);
+      }
+    }
 
     if (!success) {
       return false;
@@ -431,6 +466,11 @@ long CACHE::operate()
   std::for_each(std::cbegin(lower_level->returned), std::cend(lower_level->returned), [this](const auto& pkt) { this->finish_packet(pkt); });
   progress += std::distance(std::cbegin(lower_level->returned), std::cend(lower_level->returned));
   lower_level->returned.clear();
+  if(this->NAME == "LLC"){
+    std::for_each(std::cbegin(lower_level_far->returned), std::cend(lower_level_far->returned), [this](const auto& pkt) { this->finish_packet(pkt); });
+    progress += std::distance(std::cbegin(lower_level_far->returned), std::cend(lower_level_far->returned));
+    lower_level_far->returned.clear();
+  }
 
   // Finish translations
   if (lower_translate != nullptr) {
