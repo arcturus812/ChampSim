@@ -178,9 +178,9 @@ phase_stats do_phase(const phase_info& phase, environment& env, std::vector<trac
                  [](const DRAM_CHANNEL& chan) { return chan.roi_stats; });
 
   auto far_mem = env.far_mem_view();
-  std::transform(std::begin(far_mem.channels), std::end(far_mem.channels), std::back_inserter(stats.sim_far_mem_stats),
+  std::transform(std::begin(far_mem.channels), std::end(far_mem.channels), std::back_inserter(stats.sim_dram_stats),
                  [](const DRAM_CHANNEL& chan) { return chan.sim_stats; });
-  std::transform(std::begin(far_mem.channels), std::end(far_mem.channels), std::back_inserter(stats.roi_far_mem_stats),
+  std::transform(std::begin(far_mem.channels), std::end(far_mem.channels), std::back_inserter(stats.roi_dram_stats),
                  [](const DRAM_CHANNEL& chan) { return chan.roi_stats; });
 
   return stats;

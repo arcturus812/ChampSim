@@ -27,10 +27,11 @@ using namespace champsim::data::data_literals;
 
 VirtualMemory::VirtualMemory(champsim::data::bytes page_table_page_size, std::size_t page_table_levels, champsim::chrono::clock::duration minor_penalty,
                              MEMORY_CONTROLLER& dram_, MEMORY_CONTROLLER& far_mem_, std::optional<uint64_t> randomization_seed_)
-    : randomization_seed(randomization_seed_), dram(dram_), far_mem(far_mem_), minor_fault_penalty(minor_penalty), pt_levels(page_table_levels),
-      pte_page_size(page_table_page_size),
+    : randomization_seed(randomization_seed_), dram(dram_), far_mem(far_mem_), 
       next_pte_page(
-          champsim::dynamic_extent{champsim::data::bits{LOG2_PAGE_SIZE}, champsim::data::bits{champsim::lg2(champsim::data::bytes{pte_page_size}.count())}}, 0)
+          champsim::dynamic_extent{champsim::data::bits{LOG2_PAGE_SIZE}, champsim::data::bits{champsim::lg2(champsim::data::bytes{page_table_page_size}.count())}}, 0),
+      minor_fault_penalty(minor_penalty), pt_levels(page_table_levels),
+      pte_page_size(page_table_page_size)
 {
   assert(pte_page_size > 1_kiB);
   assert(champsim::is_power_of_2(pte_page_size.count()));
@@ -132,12 +133,53 @@ std::size_t VirtualMemory::available_ppages() const { return (ppage_free_list.si
 
 std::size_t VirtualMemory::available_far_ppages() const { return (far_ppage_free_list.size()); }
 
+// Memory allocation policy helper functions
+bool VirtualMemory::should_allocate_to_far_memory_first_touch()
+{
+  // First try DRAM, if not available then use far memory
+  return available_ppages() < 1;
+}
+
+bool VirtualMemory::should_allocate_to_far_memory_only_far_mem()
+{
+  // Always allocate to far memory
+  return true;
+}
+
+bool VirtualMemory::should_allocate_to_far_memory_round_robin()
+{
+  // Alternate between DRAM and far memory
+  bool result = !round_robin_dram_next;
+  round_robin_dram_next = !round_robin_dram_next;
+  return result;
+}
+
+bool VirtualMemory::should_allocate_to_far_memory_feedback()
+{
+  // TODO: Implement feedback-based allocation policy
+  return false; // Placeholder implementation
+}
+
 std::pair<champsim::page_number, champsim::chrono::clock::duration> VirtualMemory::va_to_pa(uint32_t cpu_num, champsim::page_number vaddr)
 {
-  bool alloc_far = true;
-  if(available_ppages() < 1){
-    alloc_far = true;
+  bool alloc_far = false;
+  
+  // Determine allocation policy based on the selected policy
+  switch (allocation_policy) {
+    case MemoryAllocationPolicy::FIRST_TOUCH:
+      alloc_far = should_allocate_to_far_memory_first_touch();
+      break;
+    case MemoryAllocationPolicy::ONLY_FAR_MEM:
+      alloc_far = should_allocate_to_far_memory_only_far_mem();
+      break;
+    case MemoryAllocationPolicy::ROUND_ROBIN:
+      alloc_far = should_allocate_to_far_memory_round_robin();
+      break;
+    case MemoryAllocationPolicy::FEEDBACK:
+      alloc_far = should_allocate_to_far_memory_feedback();
+      break;
   }
+  
   auto [ppage, fault] = vpage_to_ppage_map.try_emplace({cpu_num, champsim::page_number{vaddr}}, alloc_far ? far_ppage_front() : ppage_front());
 
   // this vpage doesn't yet have a ppage mapping
@@ -152,7 +194,7 @@ std::pair<champsim::page_number, champsim::chrono::clock::duration> VirtualMemor
   auto penalty = fault ? minor_fault_penalty : champsim::chrono::clock::duration::zero();
 
   if constexpr (champsim::debug_print) {
-    fmt::print("[VMEM] {} paddr: {} vpage: {} fault: {}\n", __func__, ppage->second, champsim::page_number{vaddr}, fault);
+    fmt::print("[VMEM] {} paddr: {} vpage: {} fault: {} alloc_far: {}\n", __func__, ppage->second, champsim::page_number{vaddr}, fault, alloc_far);
   }
 
   return std::pair{ppage->second, penalty};

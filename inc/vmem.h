@@ -34,18 +34,26 @@ using pte_entry = champsim::data::size<long long, std::ratio<8>>;
 class VirtualMemory
 {
 private:
+  // Memory allocation policy enum
+  enum class MemoryAllocationPolicy {
+    FIRST_TOUCH,    // Allocate to DRAM on first touch
+    ONLY_FAR_MEM,   // Always allocate to far memory
+    ROUND_ROBIN,    // Alternate between DRAM and far memory
+    FEEDBACK        // Use feedback-based allocation
+  };
+
   std::map<std::pair<uint32_t, champsim::page_number>, champsim::page_number> vpage_to_ppage_map;
   std::map<std::tuple<uint32_t, uint32_t, champsim::address_slice<champsim::dynamic_extent>>, champsim::address> page_table;
   std::optional<uint64_t> randomization_seed;
   MEMORY_CONTROLLER& dram;
   MEMORY_CONTROLLER& far_mem;
+  
+  // Memory allocation policy selection
+  MemoryAllocationPolicy allocation_policy = MemoryAllocationPolicy::ROUND_ROBIN;
+  
+  // Round-robin counter for alternating between DRAM and far memory
+  bool round_robin_dram_next = true;
 
-public:
-  const champsim::chrono::clock::duration minor_fault_penalty;
-  const std::size_t pt_levels;
-  const pte_entry pte_page_size; // Size of a PTE page
-
-private:
   std::deque<champsim::page_number> ppage_free_list;
   std::deque<champsim::page_number> far_ppage_free_list;
   champsim::page_number active_pte_page{};
@@ -61,8 +69,18 @@ private:
 
   void shuffle_pages();
   void populate_pages();
+  
+  // Memory allocation policy helper functions
+  bool should_allocate_to_far_memory_first_touch();
+  bool should_allocate_to_far_memory_only_far_mem();
+  bool should_allocate_to_far_memory_round_robin();
+  bool should_allocate_to_far_memory_feedback();
 
 public:
+  const champsim::chrono::clock::duration minor_fault_penalty;
+  const std::size_t pt_levels;
+  const pte_entry pte_page_size; // Size of a PTE page
+
   /**
    * Initialize the virtual memory.
    * The size of the virtual memory space is determined from the size of a page table page and the number of levels in the hierarchy.
