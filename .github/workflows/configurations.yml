@@ -3,8 +3,7 @@ name: Compile-only configurations
 on:
   push:
     branches: 
-      - master
-      - develop
+      - cxl_based_tma
     paths-ignore:
       - '.gitignore'
       - 'docs/**'
@@ -15,8 +14,7 @@ on:
 
   pull_request:
     branches:
-      - master
-      - develop
+      - cxl_based_tma
     paths-ignore:
       - '.gitignore'
       - 'docs/**'
@@ -46,18 +44,23 @@ jobs:
         file: ${{ fromJSON(needs.matrix-generate.outputs.matrix) }}
 
     steps:
+    - name: Set up basic environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3 python3-pip
+
     - uses: actions/checkout@v4
       with:
         submodules: 'true'
 
-    - name: Set up
+    - name: Set up vcpkg
       run: |
         vcpkg/bootstrap-vcpkg.sh
         vcpkg/vcpkg install
 
-    - name: Configure
+    - name: Configure ChampSim
       run: ./config.sh $(pwd)/test/config/compile-only/${{ matrix.file }}
 
-    - name: Make
+    - name: Build ChampSim
       run: make
 

@@ -3,8 +3,7 @@ name: Run Tests
 on:
   push:
     branches:
-      - master
-      - develop
+      - cxl_based_tma
     paths-ignore:
       - '.gitignore'
       - 'docs/**'
@@ -15,8 +14,7 @@ on:
 
   pull_request:
     branches:
-      - master
-      - develop
+      - cxl_based_tma
     paths-ignore:
       - '.gitignore'
       - 'docs/**'
@@ -152,7 +150,8 @@ jobs:
     - name: Set up basic environment
       if: startsWith(matrix.config.os, 'ubuntu')
       run: |
-        sudo apt-get install curl zip unzip tar ${{ matrix.config.cxx }}
+        sudo apt-get update
+        sudo apt-get install -y curl zip unzip tar python3 python3-pip ${{ matrix.config.cxx }}
 
     - uses: actions/checkout@v4
       with:
@@ -170,13 +169,13 @@ jobs:
         echo "CXXFLAGS=--coverage" >> $GITHUB_ENV
         echo "LDFLAGS=--coverage" >> $GITHUB_ENV
 
-    - name: Configure
-      run: ./config.sh
+    - name: Configure ChampSim
+      run: ./config.sh champsim_config.json
 
-    - name: Make
+    - name: Build test executable
       run: make test/bin/000-test-main
 
-    - name: Run
+    - name: Run C++ tests
       run: test/bin/000-test-main --order rand --warn NoAssertions --invisibles
 
     - name: Capture LCOV
@@ -199,6 +198,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Set up basic environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3 python3-pip
+
     - uses: actions/checkout@v4
       with:
         submodules: 'true'
@@ -209,9 +213,9 @@ jobs:
         vcpkg/vcpkg install
 
     - name: Set up coverage
-      run: python -m pip install coverage
+      run: python3 -m pip install coverage
 
-    - name: Run
+    - name: Run Python tests
       run: |
         PYTHONPATH=$PYTHONPATH:$(pwd) coverage run --source=config -m unittest discover -v --start-directory='test/python'
         coverage lcov --include=config/\*.py --omit=*/__*__.py -o lcov_python.info
@@ -225,27 +229,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Set up basic environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3 python3-pip lcov
+
     - uses: actions/checkout@v4
       with:
         submodules: 'true'
 
-    - name: Set up
+    - name: Set up vcpkg
       run: |
         vcpkg/bootstrap-vcpkg.sh
         vcpkg/vcpkg install
-        sudo apt-get install lcov
 
-    - name: Configure
-      run: ./config.sh
+    - name: Configure ChampSim
+      run: ./config.sh champsim_config.json
 
-    - name: Make
+    - name: Build ChampSim
       run: make
       env:
         CXXFLAGS: "--coverage"
         LDFLAGS: "--coverage"
 
     - name: Produce JSON
-      run: ./bin/champsim -w5000 -i5000 --json=test.json -- <(curl -s https://dpc3.compas.cs.stonybrook.edu/champsim-traces/speccpu/400.perlbench-41B.champsimtrace.xz | xz -dc)
+      run: ./bin/champsim --warmup-instructions 5000 --simulation-instructions 5000 --json=test.json -- <(curl -s https://dpc3.compas.cs.stonybrook.edu/champsim-traces/speccpu/400.perlbench-41B.champsimtrace.xz | xz -dc)
 
     - name: Validate JSON
       run: python3 -m json.tool test.json
