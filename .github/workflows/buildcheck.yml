@@ -2,10 +2,18 @@ name: Build Check
 
 on:
   schedule:
-    # run every sunday at 06:17 UTC
-    - cron: "17 6 * * 0"
+    # run every sunday at 10:00 PM KST
+    - cron: "0 13 * * 0"
   push:
     branches: [ "cxl_based_tma" ]
+    paths:
+      - "src/**"
+      - "inc/**"
+      - "prefetcher/**"
+      - "replacement/**"
+      - "branch/**"
+      - "config/**"
+      - "config.sh"
   pull_request:
     branches: [ "cxl_based_tma" ]
   workflow_dispatch:
