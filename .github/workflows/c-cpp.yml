@@ -13,11 +13,24 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - name: configure
-      run: ./configure
-    - name: make
+      with:
+        submodules: recursive
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3 python3-pip
+        vcpkg/bootstrap-vcpkg.sh
+        vcpkg/vcpkg install
+    
+    - name: Configure ChampSim
+      run: ./config.sh champsim_config.json
+    
+    - name: Build ChampSim
       run: make
-    - name: make check
-      run: make check
-    - name: make distcheck
-      run: make distcheck
+    
+    - name: Run C++ tests
+      run: make test
+    
+    - name: Run Python tests
+      run: make pytest
