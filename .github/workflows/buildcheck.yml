@@ -6,14 +6,12 @@ on:
     - cron: "0 13 * * 0"
   push:
     branches: [ "cxl_based_tma" ]
-    paths:
-      - "src/**"
-      - "inc/**"
-      - "prefetcher/**"
-      - "replacement/**"
-      - "branch/**"
-      - "config/**"
-      - "config.sh"
+#    paths:
+#      - "src/**"
+#      - "inc/**"
+#      - "prefetcher/**"
+#      - "config/**"
+#      - "config.sh"
   pull_request:
     branches: [ "cxl_based_tma" ]
   workflow_dispatch:
