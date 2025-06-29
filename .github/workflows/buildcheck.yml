@@ -72,8 +72,15 @@ jobs:
       run: |
         curl -s --remote-name-all https://dpc3.compas.cs.stonybrook.edu/champsim-traces/speccpu/400.perlbench-41B.champsimtrace.xz https://dpc3.compas.cs.stonybrook.edu/champsim-traces/speccpu/401.bzip2-226B.champsimtrace.xz
 
+    - name: Configure for multi-core
+      run: |
+        # Backup original config
+        cp champsim_config.json champsim_config.json.backup
+        # Change num_cores to 2
+        sed -i 's/"num_cores": 1/"num_cores": 2/' champsim_config.json
+
     - name: Configure ChampSim
-      run: './config.sh <(echo "{\"num_cores\": 2}")'
+      run: ./config.sh champsim_config.json
 
     - name: Build ChampSim
       run: make
@@ -81,6 +88,11 @@ jobs:
     # TODO run an actual set of checks
     - name: Run tests
       run: ./bin/champsim --warmup-instructions 50000000 --simulation-instructions 50000000 --json=multi_core_result.json -- 400.perlbench-41B.champsimtrace.xz 401.bzip2-226B.champsimtrace.xz
+
+    - name: Restore original config
+      run: |
+        # Restore original config
+        mv champsim_config.json.backup champsim_config.json
 
     # We upload the generated files under github actions assets
     - name: Upload Results
