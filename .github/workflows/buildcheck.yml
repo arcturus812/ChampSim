@@ -8,6 +8,7 @@ on:
     branches: [ "cxl_based_tma" ]
   pull_request:
     branches: [ "cxl_based_tma" ]
+  workflow_dispatch:
 
 jobs:
   single_core:
