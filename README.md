@@ -32,6 +32,136 @@ $ ./config.sh <configuration file>
 $ make
 ```
 
+# Tiered Memory Architecture (TMA) Feature
+
+ChampSim supports Tiered Memory Architecture (TMA) with DRAM and far memory tiers. This feature allows simulation of heterogeneous memory systems with different latency and capacity characteristics.
+
+## Configuration
+
+### 1. Enable TMA in champsim_config.json
+
+Set the `TMA` flag to `true` in your configuration file:
+
+```json
+{
+  "TMA": true,
+  "physical_memory": {
+    "data_rate": 3200,
+    "channels": 1,
+    "ranks": 1,
+    "bankgroups": 8,
+    "banks": 4,
+    "bank_rows": 65536,
+    "bank_columns": 1024,
+    "channel_width": 8,
+    "wq_size": 64,
+    "rq_size": 64,
+    "tCAS": 24,
+    "tRCD": 24,
+    "tRP": 24,
+    "tRAS": 52,
+    "refresh_period": 32,
+    "refreshes_per_period": 8192,
+    "tADD": 0
+  },
+  "physical_memory_far": {
+    "data_rate": 3200,
+    "channels": 1,
+    "ranks": 4,
+    "bankgroups": 8,
+    "banks": 4,
+    "bank_rows": 65536,
+    "bank_columns": 1024,
+    "channel_width": 8,
+    "wq_size": 64,
+    "rq_size": 64,
+    "tCAS": 24,
+    "tRCD": 24,
+    "tRP": 24,
+    "tRAS": 52,
+    "refresh_period": 32,
+    "refreshes_per_period": 8192,
+    "tADD": 72
+  }
+}
+```
+
+### 2. Memory Allocation Policies
+
+ChampSim supports four different memory allocation policies for TMA:
+
+#### Policy Configuration in vmem.h
+
+The memory allocation policy can be configured by modifying the `allocation_policy` variable in `inc/vmem.h`:
+
+```cpp
+// Memory allocation policy selection
+MemoryAllocationPolicy allocation_policy = MemoryAllocationPolicy::ROUND_ROBIN;
+```
+
+#### Available Policies
+
+1. **FIRST_TOUCH**: Allocates pages to DRAM on first access, switches to far memory only when DRAM is full
+   ```cpp
+   MemoryAllocationPolicy allocation_policy = MemoryAllocationPolicy::FIRST_TOUCH;
+   ```
+
+2. **ONLY_FAR_MEM**: Always allocates pages to far memory
+   ```cpp
+   MemoryAllocationPolicy allocation_policy = MemoryAllocationPolicy::ONLY_FAR_MEM;
+   ```
+
+3. **ROUND_ROBIN**: Alternates between DRAM and far memory for page allocations
+   ```cpp
+   MemoryAllocationPolicy allocation_policy = MemoryAllocationPolicy::ROUND_ROBIN;
+   ```
+
+4. **FEEDBACK**: Uses feedback-based allocation (currently placeholder implementation)
+   ```cpp
+   MemoryAllocationPolicy allocation_policy = MemoryAllocationPolicy::FEEDBACK;
+   ```
+
+### 3. Policy Implementation Details
+
+Each policy is implemented as a separate function in `src/vmem.cc`:
+
+- `should_allocate_to_far_memory_first_touch()`: DRAM-first allocation
+- `should_allocate_to_far_memory_only_far_mem()`: Far memory only
+- `should_allocate_to_far_memory_round_robin()`: Alternating allocation
+- `should_allocate_to_far_memory_feedback()`: Feedback-based (TODO)
+
+### 4. Running TMA Simulations
+
+To run simulations with TMA enabled:
+
+```bash
+# Configure with TMA enabled
+./config.sh champsim_config.json
+
+# Build
+make
+
+# Run simulation
+./bin/champsim --warmup-instructions 200000000 --simulation-instructions 500000000 trace_file.champsimtrace.xz
+```
+
+### 5. Debug Output
+
+When debug printing is enabled, the virtual memory system will output allocation decisions:
+
+```
+[VMEM] va_to_pa paddr: 0x1000 vpage: 0x1000 fault: 1 alloc_far: 0
+```
+
+This shows whether each page allocation went to DRAM (`alloc_far: 0`) or far memory (`alloc_far: 1`).
+
+## Memory Characteristics
+
+- **DRAM**: Lower latency, smaller capacity
+- **Far Memory**: Higher latency (additional `tADD` penalty), larger capacity
+
+The far memory configuration includes an additional `tADD` parameter (72 cycles in the example) that represents the additional latency for accessing far memory.
+
 # Download DPC-3 trace
 
 Traces used for the 3rd Data Prefetching Championship (DPC-3) can be found here. (https://dpc3.compas.cs.stonybrook.edu/champsim-traces/speccpu/) A set of traces used for the 2nd Cache Replacement Championship (CRC-2) can be found from this link. (http://bit.ly/2t2nkUj)
