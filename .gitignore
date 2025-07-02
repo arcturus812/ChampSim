@@ -3,8 +3,11 @@ _configuration.mk
 
 **/__pycache__/
 *.pyc
+script/exp_env.py
 
 bin/
+
+script/exp_env.py
 
 **/*.o
 **/*.d
