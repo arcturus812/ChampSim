@@ -70,7 +70,7 @@
     "prefetch_as_load": false,
     "virtual_prefetch": false,
     "prefetch_activate": "LOAD,PREFETCH",
-    "prefetcher": "no"
+    "prefetcher": "next_line"
   },
 
   "L2C": {
@@ -86,7 +86,7 @@
     "prefetch_as_load": false,
     "virtual_prefetch": false,
     "prefetch_activate": "LOAD,PREFETCH",
-    "prefetcher": "no"
+    "prefetcher": "spp_dev"
   },
 
   "ITLB": {
@@ -157,7 +157,7 @@
     "prefetch_as_load": false,
     "virtual_prefetch": false,
     "prefetch_activate": "LOAD,PREFETCH",
-    "prefetcher": "no",
+    "prefetcher": "stream",
     "replacement": "lru"
   },
 

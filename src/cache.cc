@@ -256,9 +256,20 @@ bool CACHE::handle_fill(const mshr_type& fill_mshr)
   }
 
   // COLLECT STATS
-  if (fill_mshr.type != access_type::PREFETCH)
+  if (fill_mshr.type != access_type::PREFETCH) // [PHW] TODO, this is how to measure miss latency from specific cache layer.
     sim_stats.total_miss_latency_cycles += (current_time - (fill_mshr.time_enqueued + clock_period)) / clock_period;
   sim_stats.mshr_return.increment(std::pair{fill_mshr.type, fill_mshr.cpu});
+
+  // [PHW] COLLECT miss handle cycle
+  if(ENABLE_PAGE_STATS){
+    if(this->NAME.find("L1D") != std::string::npos || this->NAME.find("L2C") != std::string::npos || this->NAME.find("LLC") != std::string::npos){
+      uint64_t pfn = fill_mshr.address.to<uint64_t>() >> LOG2_PAGE_SIZE;
+      uint64_t vfn = fill_mshr.v_address.to<uint64_t>() >> LOG2_PAGE_SIZE;
+      std::string caller = this->NAME;
+      uint64_t miss_handle_cycle = (current_time - (fill_mshr.time_enqueued + clock_period)) / clock_period;
+      g_page_stat_logger.event_log(caller, PAGE_STAT_EVENT::MSHR_MISS_HANDLE, pfn, vfn, fill_mshr.cpu, miss_handle_cycle);
+    }
+  }
 
   response_type response{fill_mshr.address, fill_mshr.v_address, fill_mshr.data_promise->data, metadata_thru, fill_mshr.instr_depend_on_me};
   for (auto* ret : fill_mshr.to_return) {

@@ -95,9 +95,11 @@ def main():
     # run_champsim_with_log(TEST_TRACE, WARM_INST, SIM_INST)
     # if there are arguments, run_champsim_wo_log with suffix arg
     if len(sys.argv) > 1:
-        run_champsim_with_feed(TEST_TRACE, WARM_INST, SIM_INST, "_" + sys.argv[1])
+        # run_champsim_with_feed(TEST_TRACE, WARM_INST, SIM_INST, "_" + sys.argv[1])
+        run_champsim_wo_log(TEST_TRACE, WARM_INST, SIM_INST, "_" + sys.argv[1])
     else:
-        run_champsim_with_feed(TEST_TRACE, WARM_INST, SIM_INST, "")
+        # run_champsim_with_feed(TEST_TRACE, WARM_INST, SIM_INST, "")
+        run_champsim_wo_log(TEST_TRACE, WARM_INST, SIM_INST, "")
 
 if __name__ == '__main__':
     main()
