@@ -22,12 +22,14 @@
 #include <map>
 #include <optional>
 #include <random>
+#include <unordered_map>
 
 #include "address.h"
 #include "champsim.h"
 #include "chrono.h"
 
 #include "page_stat.h"
+#include "tracefeeder.h"
 
 extern page_stat_logger g_page_stat_logger;
 
@@ -53,7 +55,8 @@ private:
   MEMORY_CONTROLLER& far_mem;
   
   // Memory allocation policy selection
-  MemoryAllocationPolicy allocation_policy = MemoryAllocationPolicy::ROUND_ROBIN;
+  // MemoryAllocationPolicy allocation_policy = MemoryAllocationPolicy::ROUND_ROBIN;
+  MemoryAllocationPolicy allocation_policy = MemoryAllocationPolicy::FEEDBACK;
   
   // Round-robin counter for alternating between DRAM and far memory
   bool round_robin_dram_next = true;
@@ -65,6 +68,14 @@ private:
 
   // champsim::page_number next_ppage;
   // champsim::page_number last_ppage;
+
+  std::vector<std::string> trace_names;
+  std::vector<std::string> feed_names;
+  bool feed_flag = false;
+
+  champsim::tracefeeder tracefeeder;
+
+  std::unordered_map<uint32_t, std::string> cpu_to_trace_map;
 
   [[nodiscard]] champsim::page_number ppage_front() const;
   [[nodiscard]] champsim::page_number far_ppage_front() const;
@@ -78,7 +89,7 @@ private:
   bool should_allocate_to_far_memory_first_touch();
   bool should_allocate_to_far_memory_only_far_mem();
   bool should_allocate_to_far_memory_round_robin();
-  bool should_allocate_to_far_memory_feedback();
+  bool should_allocate_to_far_memory_feedback(uint32_t cpu_num, champsim::page_number vaddr);
 
 public:
   const champsim::chrono::clock::duration minor_fault_penalty;
@@ -145,6 +156,8 @@ public:
    * :returns: A pair of the page table page address and the latency to be applied to the operation.
    */
   std::pair<champsim::address, champsim::chrono::clock::duration> get_pte_pa(uint32_t cpu_num, champsim::page_number vaddr, std::size_t level);
+
+  bool set_trace_and_feed(const std::vector<std::string> fPaths, const std::vector<std::string> tPaths);
 };
 
 #endif

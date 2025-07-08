@@ -17,6 +17,9 @@
 #include "vmem.h"
 
 #include <cassert>
+#include <filesystem>
+#include <iostream>
+#include <unordered_set>
 #include <fmt/core.h>
 
 #include "champsim.h"
@@ -157,13 +160,17 @@ bool VirtualMemory::should_allocate_to_far_memory_round_robin()
   return result;
 }
 
-bool VirtualMemory::should_allocate_to_far_memory_feedback()
+bool VirtualMemory::should_allocate_to_far_memory_feedback(uint32_t cpu_num, champsim::page_number vaddr)
 {
-  // TODO: Implement feedback-based allocation policy
-  return false; // Placeholder implementation
+  /*
+    if vfn is not found, it will return false
+    if vfn's feed indicate dram, it will return false
+    if vfn's feed indicate far, it will return true
+  */
+  return tracefeeder.find(cpu_num, vaddr.to<uint64_t>());
 }
 
-std::pair<champsim::page_number, champsim::chrono::clock::duration> VirtualMemory::va_to_pa(uint32_t cpu_num, champsim::page_number vaddr)
+std::pair<champsim::page_number, champsim::chrono::clock::duration> VirtualMemory::va_to_pa(uint32_t cpu_num, champsim::page_number vaddr) // it's already vfn? yes!!!!!!!!
 {
   bool alloc_far = false;
   
@@ -179,7 +186,11 @@ std::pair<champsim::page_number, champsim::chrono::clock::duration> VirtualMemor
       alloc_far = should_allocate_to_far_memory_round_robin();
       break;
     case MemoryAllocationPolicy::FEEDBACK:
-      alloc_far = should_allocate_to_far_memory_feedback();
+      if(!feed_flag){
+        fmt::print("\033[31m[VMEM] WARNING: feed_flag is not set! aborting...\033[0m\n");
+        exit(1);
+      }
+      alloc_far = should_allocate_to_far_memory_feedback(cpu_num, vaddr);
       break;
   }
   
@@ -241,4 +252,49 @@ std::pair<champsim::address, champsim::chrono::clock::duration> VirtualMemory::g
   }
 
   return {paddr, penalty};
+}
+
+bool VirtualMemory::set_trace_and_feed(const std::vector<std::string> fPaths, const std::vector<std::string> tPaths)
+{
+  feed_names = fPaths;
+  trace_names = tPaths;
+  std::unordered_set<std::string> fProcessedNames;
+  std::unordered_set<std::string> tProcessedNames;
+
+  for(const auto& filePath : feed_names){
+    std::string filename = std::filesystem::path(filePath).filename().string();
+    std::string feedname;
+    size_t pos = filename.find("B.csv");
+    if(pos != std::string::npos){
+      feedname = filename.substr(0, pos + 1);
+    }else{
+      std::cerr << "Error: feed file name format is not correct: " << filename << std::endl;
+      return false;
+    }
+    // std::cout << "feed name: " << feedname << std::endl;
+    fProcessedNames.insert(feedname);
+  }
+  for(const auto& filePath : trace_names){
+    std::string filename = std::filesystem::path(filePath).filename().string();
+    std::string tracename;
+    // size_t pos = filename.find(".champsimtrace.xz"); // should be when using spec trace
+    size_t pos = filename.find(".champsim");
+    if(pos != std::string::npos){
+      tracename = filename.substr(0, pos);
+    }
+    // std::cout << "trace name: " << tracename << std::endl;
+    tProcessedNames.insert(tracename);
+  }
+  // check feed for all trace or not
+  for(const auto& tname : tProcessedNames){
+    if(fProcessedNames.find(tname) == fProcessedNames.end()){
+      std::cerr << "Error: feed file for trace not found: " << tname << std::endl;
+      return false;
+    }
+  }
+  tracefeeder = champsim::tracefeeder(fPaths);
+  tracefeeder.readCSV();
+  // tracefeeder.printData();
+  feed_flag = true;
+  return true;
 }

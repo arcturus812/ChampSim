@@ -477,6 +477,8 @@ def get_instantiation_lines(cores, caches, ptws, pmem, vmem, build_id, tma=False
         yield from cxx.function(f'{classname}::far_mem_view', [f'return nullptr;'], rtype='MEMORY_CONTROLLER&')
     yield ''
 
+    yield from cxx.function(f'{classname}::vmem_view', [f'return vmem;'], rtype='VirtualMemory&')
+
 def get_instantiation_header(num_cpus, env, build_id, tma=False, pmem=None, page_stat=False):
     # [PHW] for far memory
     dram_max_addr = 0
@@ -516,6 +518,7 @@ def get_instantiation_header(num_cpus, env, build_id, tma=False, pmem=None, page
         'std::vector<std::reference_wrapper<PageTableWalker>> ptw_view() final;',
         'MEMORY_CONTROLLER& dram_view() final;',
         'MEMORY_CONTROLLER& far_mem_view() final;',
+        'VirtualMemory& vmem_view() final;',
         'std::vector<std::reference_wrapper<operable>> operable_view() final;'
     ])
     struct_name = f'champsim::configured::generated_environment<0x{build_id}> final'
