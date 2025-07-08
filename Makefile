@@ -25,16 +25,8 @@ override LDLIBS   += -lCLI11 -llzma -lz -lbz2 -lfmt
 test_main_name=test/bin/000-test-main
 build_ids:=
 executable_name:=
-prereq_for_generated:=
+prereq_for_genprereq_for_generatederated:=
 
-## Debug flag
-ifdef DEBUG
-override CXXFLAGS += -g3 -Og
-endif
-
-# DEBUG target
-DEBUG: DEBUG=1
-DEBUG: all
 
 # List all subdirectories of a given directory
 # $1 - parent directory
@@ -336,6 +328,13 @@ selected_test = -\# "[$(addprefix #,$(filter $(addsuffix %,$(TEST_NUM)), $(patsu
 endif
 test: $(test_main_name)
 	$(test_main_name) $(selected_test)
+
+.PHONY: debug
+debug.options: global.options
+	@sed 's/-O3/-g3/g' $< > $@
+
+debug: debug.options
+	@$(MAKE) base_options="absolute.options debug.options"
 
 pytest:
 	PYTHONPATH=$(PYTHONPATH):$(ROOT_DIR) python3 -m unittest discover -v --start-directory='test/python'
