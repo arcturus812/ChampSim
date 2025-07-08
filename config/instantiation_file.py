@@ -478,7 +478,7 @@ def get_instantiation_lines(cores, caches, ptws, pmem, vmem, build_id, tma=False
     yield ''
 
 def get_instantiation_header(num_cpus, env, build_id, tma=False, pmem=None, page_stat=False):
-    # [PHW] for cxl
+    # [PHW] for far memory
     dram_max_addr = 0
     if pmem:
         dram_max_addr = pmem['ranks'] * pmem['bankgroups'] * pmem['banks'] * pmem['bank_rows'] * pmem['bank_columns'] * pmem['channel_width']

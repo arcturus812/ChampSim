@@ -69,6 +69,9 @@ void VirtualMemory::populate_pages()
   assert(far_ppage_free_list.size() != 0);
   champsim::page_number base_address =
       champsim::page_number{champsim::lowest_address_for_size(std::max<champsim::data::mebibytes>(champsim::data::bytes{PAGE_SIZE}, 1_MiB))};
+  if (ENABLE_PAGE_STATS){
+    g_page_stat_logger.populate_page_stat_map(ppage_free_list.size() + far_ppage_free_list.size(), base_address.to<uint64_t>());
+  }
   for (auto it = ppage_free_list.begin(); it != ppage_free_list.end(); it++) {
     *it = base_address;
     base_address++;
@@ -192,6 +195,13 @@ std::pair<champsim::page_number, champsim::chrono::clock::duration> VirtualMemor
   }
 
   auto penalty = fault ? minor_fault_penalty : champsim::chrono::clock::duration::zero();
+
+  if (ENABLE_PAGE_STATS){
+    bool ret = g_page_stat_logger.map_pfn_to_vfn(ppage->second.to<uint64_t>(), vaddr.to<uint64_t>(), cpu_num);
+    if (!ret){
+      fmt::print("[STAT_LOGGER] WARNING: Failed to map pfn to vfn\n");
+    }
+  }
 
   if constexpr (champsim::debug_print) {
     fmt::print("[VMEM] {} paddr: {} vpage: {} fault: {} alloc_far: {}\n", __func__, ppage->second, champsim::page_number{vaddr}, fault, alloc_far);

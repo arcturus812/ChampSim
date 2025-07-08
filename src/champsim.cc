@@ -202,6 +202,10 @@ std::vector<phase_stats> main(environment& env, std::vector<phase_info>& phases,
     }
   }
 
+  if (ENABLE_PAGE_STATS){
+    g_page_stat_logger.print_page_stat_map_to_csv();
+  }
+
   return results;
 }
 } // namespace champsim

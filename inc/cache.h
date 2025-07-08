@@ -47,6 +47,10 @@
 #include "util/to_underlying.h" // for to_underlying
 #include "waitable.h"
 
+#include "page_stat.h"
+
+extern page_stat_logger g_page_stat_logger;
+
 class CACHE : public champsim::operable
 {
   enum [[deprecated(

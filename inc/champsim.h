@@ -28,6 +28,8 @@
 #include "util/ratio.h"
 #include "util/units.h"
 
+#include "page_stat.h"
+
 extern const std::size_t NUM_CPUS;
 extern const unsigned BLOCK_SIZE;
 extern const unsigned PAGE_SIZE;
@@ -35,6 +37,8 @@ extern const unsigned LOG2_BLOCK_SIZE;
 extern const unsigned LOG2_PAGE_SIZE;
 
 extern const std::size_t DRAM_MAX_ADDR;
+extern const bool ENABLE_PAGE_STATS;
+extern page_stat_logger g_page_stat_logger;
 
 namespace champsim
 {

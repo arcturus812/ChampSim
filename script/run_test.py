@@ -63,7 +63,14 @@ def run_champsim_wo_log(trace, warmup_inst, sim_inst, bin_suffix=""):
 
 
 def main():
-    common.activate_venv()
+    # Check if virtual environment is active
+    if not common.is_venv_active():
+        print("Warning: Virtual environment is not active.")
+        print("Please activate the virtual environment before running this script:")
+        print(f"source {exp_env.VENV_PATH}/bin/activate")
+        print("Then run the script again.")
+        sys.exit(1)
+    
     # 20M warmup, 100M sim
     # run_champsim_with_log(TEST_TRACE, WARM_INST, SIM_INST)
     # if there are arguments, run_champsim_wo_log with suffix arg

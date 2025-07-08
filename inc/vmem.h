@@ -27,6 +27,10 @@
 #include "champsim.h"
 #include "chrono.h"
 
+#include "page_stat.h"
+
+extern page_stat_logger g_page_stat_logger;
+
 class MEMORY_CONTROLLER;
 
 using pte_entry = champsim::data::size<long long, std::ratio<8>>;
