@@ -5,6 +5,7 @@
   "heartbeat_frequency": 10000000,
   "num_cores": 1,
   "TMA": true,
+  "page_stat": true,
 
   "ooo_cpu": [
     {

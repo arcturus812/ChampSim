@@ -275,8 +275,9 @@ class NormalizedConfiguration:
         # The name 'DRAM' is reserved for the physical memory
         self.caches = {k:v for k,v in self.caches.items() if k != 'DRAM'}
 
-        # [PHW] add far memory
+        # [PHW] add far memory and page stat logging
         self.tma = config_file.get('TMA', False)
+        self.page_stat = config_file.get('page_stat', False)
 
         self.pmem = config_file.get('physical_memory', {})
 
@@ -323,6 +324,7 @@ class NormalizedConfiguration:
         self.ptws = util.chain(self.ptws, rhs.ptws)
         self.pmem = util.chain(self.pmem, rhs.pmem)
         self.tma = self.tma or rhs.tma # [PHW] if tma is enabled in either config, it will be enabled in the merged config
+        self.page_stat = self.page_stat or rhs.page_stat # [PHW] if page_stat is enabled in either config, it will be enabled in the merged config
         self.pmem_far = self.pmem_far or rhs.pmem_far # [PHW] if pmem_far is specified in either config, it will be specified in the merged config
         self.vmem = util.chain(self.vmem, rhs.vmem)
         self.root = util.chain(self.root, rhs.root)
@@ -479,6 +481,7 @@ class NormalizedConfiguration:
             'pmem': pmem,
             'vmem': vmem,
             'tma': self.tma,
+            'page_stat': self.page_stat,
             'pmem_far': pmem_far
         }
         module_info = {

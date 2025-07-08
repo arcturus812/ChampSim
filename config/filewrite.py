@@ -174,7 +174,7 @@ class Fragment:
         fileparts = [
             # Instantiation file
             (os.path.join(objdir_name, 'core_inst.inc'), cxx_file(get_instantiation_header(len(elements['cores']),
-                                                                                            config_file, build_id=build_id, tma=elements.get('tma', False), pmem=elements.get('pmem', None)))),
+                                                                                            config_file, build_id=build_id, tma=elements.get('tma', False), pmem=elements.get('pmem', None), page_stat=elements.get('page_stat', False)))),
             (os.path.join(objdir_name, 'core_inst.cc.inc'), cxx_file(get_instantiation_lines(**elements, build_id=build_id))),
 
             # Makefile generation

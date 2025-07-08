@@ -16,7 +16,7 @@ SIM_INST = 5000000 #5M
 # TEST_TRACE=exp_env.TRACE_ROOT + "/spec/410.bwaves-1963B.champsimtrace.xz"
 # TEST_TRACE=exp_env.TRACE_ROOT + "/micro/sequential_1g_4iter.champsim"
 TEST_TRACE=exp_env.TRACE_ROOT + "/micro/sequential_1g_4iter_app64.champsim"
-NUM_CORE = 2  # Number of cores
+NUM_CORE = 1  # Number of cores
 
 def run_champsim_with_log(trace, warmup_inst, sim_inst, bin_suffix=""):
     bin_path=exp_env.SIM_BIN + bin_suffix
