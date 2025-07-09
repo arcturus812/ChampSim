@@ -1,0 +1,15 @@
+[Unit]
+Description=Champsim Scheduler Daemon
+After=network.target
+
+[Service]
+User=hwpark
+WorkingDirectory=__WORKING_DIR__
+ExecStart=__PYTHON_PATH__ __SCRIPT_PATH__ --cores=64 --memory=125
+Restart=always
+StandardOutput=append:/var/log/champsim_scheduler.log
+StandardError=append:/var/log/champsim_scheduler.err
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
