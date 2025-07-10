@@ -394,7 +394,9 @@ bool CACHE::handle_miss(const tag_lookup_type& handle_pkt)
             uint64_t pfn = handle_pkt.address.to<uint64_t>() >> LOG2_PAGE_SIZE;
             uint64_t vfn = handle_pkt.v_address.to<uint64_t>() >> LOG2_PAGE_SIZE;
             std::string caller = this->NAME;
-            g_page_stat_logger.event_log(caller, PAGE_STAT_EVENT::MSHR_PREFETCH_HIT, pfn, vfn, handle_pkt.cpu, 0);
+            // Calculate cycles since MSHR entry was enqueued (consistent with miss_handle_cycle calculation)
+            uint64_t cycles_since_enqueued = (current_time - (mshr_entry->time_enqueued + clock_period)) / clock_period;
+            g_page_stat_logger.event_log(caller, PAGE_STAT_EVENT::MSHR_PREFETCH_HIT, pfn, vfn, handle_pkt.cpu, cycles_since_enqueued);
           }
         }
         ++sim_stats.pf_useful;

@@ -169,11 +169,12 @@ class SchedulerClient:
         return response and "SUCCESS" in response
 
 class TUIClient:
-    def __init__(self, host: str = 'localhost', port: int = 5555):
+    def __init__(self, host: str = 'localhost', port: int = 5555, refresh_rate: float = 2.0):
         self.client = SchedulerClient(host, port)
         self.console = self.client.console
         self.command_queue = queue.Queue()
         self.should_exit = False
+        self.refresh_rate = refresh_rate  # Refresh rate in seconds
         
     def start(self):
         """Start the TUI client interface"""
@@ -194,7 +195,7 @@ class TUIClient:
         input_thread.start()
         
         # Start the live display
-        with Live(self._generate_layout(), refresh_per_second=2, screen=True) as live:
+        with Live(self._generate_layout(), refresh_per_second=1/self.refresh_rate, screen=True) as live:
             while not self.should_exit:
                 try:
                     # Update job information
@@ -205,7 +206,7 @@ class TUIClient:
                     
                     # Update display
                     live.update(self._generate_layout())
-                    time.sleep(0.5)
+                    time.sleep(self.refresh_rate)
                 except KeyboardInterrupt:
                     break
         
@@ -369,6 +370,7 @@ class TUIClient:
         
         layout.split_column(
             Layout(name="header", size=3),
+            Layout(name="stats", size=3),
             Layout(name="body"),
             Layout(name="footer", size=3)
         )
@@ -385,19 +387,33 @@ class TUIClient:
             border_style="blue"
         )
         
+        # Statistics panel
+        running_count = len(self.client.running_jobs)
+        queued_count = len(self.client.queued_jobs)
+        total_count = running_count + queued_count
+        
+        stats_text = f"""
+[bold]Job Statistics:[/bold]
+- Running Jobs: [green]{running_count}[/green]
+- Queued Jobs: [yellow]{queued_count}[/yellow]
+- Total Jobs: [cyan]{total_count}[/cyan]
+        """
+        stats_panel = Panel(stats_text, title="Job Counts", border_style="cyan")
+        
         # Running jobs table
-        running_table = self._create_jobs_table(self.client.running_jobs, "Running Jobs", "green")
-        running_panel = Panel(running_table, title="Running Jobs", border_style="green")
+        running_table = self._create_jobs_table(self.client.running_jobs, f"Running Jobs ({running_count})", "green")
+        running_panel = Panel(running_table, title=f"Running Jobs ({running_count})", border_style="green")
         
         # Queued jobs table
-        queued_table = self._create_jobs_table(self.client.queued_jobs, "Queued Jobs", "yellow")
-        queued_panel = Panel(queued_table, title="Queued Jobs", border_style="yellow")
+        queued_table = self._create_jobs_table(self.client.queued_jobs, f"Queued Jobs ({queued_count})", "yellow")
+        queued_panel = Panel(queued_table, title=f"Queued Jobs ({queued_count})", border_style="yellow")
         
         # Footer with help
         footer_text = "[bold]Commands:[/bold] h=help, q=quit, r=reconnect, kill <id>, pause <id>, resume <id>"
         footer = Panel(Align.center(footer_text), border_style="cyan")
         
         layout["header"].update(header)
+        layout["stats"].update(stats_panel)
         layout["running"].update(running_panel)
         layout["queued"].update(queued_panel)
         layout["footer"].update(footer)
@@ -444,11 +460,13 @@ def main():
                        help='Scheduler host address')
     parser.add_argument('--port', type=int, default=5555, 
                        help='Scheduler port number')
+    parser.add_argument('--refresh-rate', type=float, default=2.0,
+                       help='Screen refresh rate in seconds (default: 2.0)')
     
     args = parser.parse_args()
     
     # Create and start TUI client
-    tui_client = TUIClient(args.host, args.port)
+    tui_client = TUIClient(args.host, args.port, args.refresh_rate)
     tui_client.start()
 
 if __name__ == "__main__":

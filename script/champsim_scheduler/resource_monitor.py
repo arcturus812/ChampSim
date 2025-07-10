@@ -9,15 +9,40 @@ class ResourceMonitor:
         self.jobs = set()
         self.mem = None
         self.min_memory_per_job = 3 * 1024 * 1024 * 1024  # 3GB in bytes
+        self.scheduler = None  # Reference to scheduler for job counts
         self.update()  # Initialize self.mem
+
+    def set_scheduler(self, scheduler):
+        """Set reference to scheduler for job count access"""
+        self.scheduler = scheduler
 
     def update(self):
         self.mem = psutil.virtual_memory()
-        # Print real-time memory usage
+        # Print real-time memory usage with job counts
         used_gb = self.mem.used / (1024**3)
         available_gb = self.mem.available / (1024**3)
         total_gb = self.max_memory / (1024**3)
-        print(f"[Memory Monitor] Used: {used_gb:.1f}GB, Available: {available_gb:.1f}GB, Total: {total_gb:.1f}GB")
+        
+        # Get job counts if scheduler is available
+        queued_count = 0
+        running_count = 0
+        completed_count = 0
+        
+        if self.scheduler:
+            # Get queued jobs count
+            queued_jobs = self.scheduler.get_queued_jobs()
+            queued_count = len(queued_jobs)
+            
+            # Get running jobs count
+            running_jobs = self.scheduler.get_running_jobs()
+            running_count = len(running_jobs)
+            
+            # Calculate completed jobs (total jobs created - queued - running)
+            total_jobs_created = self.scheduler.job_queue.counter
+            completed_count = total_jobs_created - queued_count - running_count
+            completed_count = max(0, completed_count)  # Ensure non-negative
+        
+        print(f"[Memory Monitor] Used: {used_gb:.1f}GB, Available: {available_gb:.1f}GB, Total: {total_gb:.1f}GB Jobs: ({queued_count}/{running_count}/{completed_count})")
 
     def should_pause(self):
         # Check if available memory is less than pause threshold OR

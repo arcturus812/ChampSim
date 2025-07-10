@@ -55,7 +55,7 @@ private:
   MEMORY_CONTROLLER& far_mem;
   
   // Memory allocation policy selection
-  MemoryAllocationPolicy allocation_policy = MemoryAllocationPolicy::FIRST_TOUCH;
+  MemoryAllocationPolicy allocation_policy = MemoryAllocationPolicy::FEEDBACK;
   
   // Round-robin counter for alternating between DRAM and far memory
   bool round_robin_dram_next = true;

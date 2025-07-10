@@ -5,7 +5,7 @@ After=network.target
 [Service]
 User=hwpark
 WorkingDirectory=__WORKING_DIR__
-ExecStart=__PYTHON_PATH__ __SCRIPT_PATH__ --cores=64 --memory=125
+ExecStart=__PYTHON_PATH__ __SCRIPT_PATH__ --cores=64 --memory=100
 Restart=always
 StandardOutput=append:/var/log/champsim_scheduler.log
 StandardError=append:/var/log/champsim_scheduler.err

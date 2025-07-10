@@ -38,6 +38,7 @@ struct stats{
     uint64_t prefetch;
     uint64_t useful_prefetch_hit;
     uint64_t mshr_prefetch_hit;
+    uint64_t accumulated_mshr_prefetch_hit_cycle;
     uint64_t pf_degree_sum;
     uint64_t pf_degree_cnt;
     uint64_t useless_prefetch;

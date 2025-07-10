@@ -9,7 +9,7 @@ from worker import JobWorker
 from resource_monitor import ResourceMonitor
 
 MAX_CORES = 64
-MAX_MEMORY_GB = 128
+MAX_MEMORY_GB = 125
 
 class PriorityJobQueue:
     def __init__(self, sim_times):
@@ -57,9 +57,10 @@ class PriorityJobQueue:
     def get_all_queued_jobs(self):
         """Get all queued jobs info"""
         with self.lock:
+            # 수정: heap에 있는 작업들만 queued로 반환 (heap에 없는 것이 아니라)
             return {seq_num: self.job_info_map[seq_num] 
                    for seq_num in self.job_info_map.keys() 
-                   if seq_num not in [job[1] for job in self.heap]}
+                   if seq_num in [job[1] for job in self.heap]}
 
     def remove_job(self, sequence_number: int):
         """Remove a job from queue"""
@@ -78,9 +79,22 @@ class PriorityJobQueue:
             return False
 
     def _extract_workload_name(self, command: str) -> Union[str, None]:
-        # Match something like 605.mcf_s-782B.champsimtrace.xz
-        match = re.search(r'([\w\d]+\.[\w\d_]+-\d+B)\.champsimtrace\.xz', command)
-        return match.group(1) if match else None
+        # Match patterns like:
+        # 657.xz_s-3167B.champsimtrace.xz
+        # 605.mcf_s-782B.champsimtrace.xz
+        # 607.cactuBSSN_s-2421B.champsimtrace.xz
+        patterns = [
+            r'([\w\d]+\.[\w\d_]+-\d+B)\.champsimtrace\.xz',  # 657.xz_s-3167B.champsimtrace.xz
+            r'([\w\d]+\.[\w\d_]+-\d+B)\.trace\.xz',           # Alternative pattern
+            r'([\w\d]+\.[\w\d_]+-\d+B)\.trace',               # Without .xz extension
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, command)
+            if match:
+                return match.group(1)
+        
+        return None
 
 
 def load_simulation_times() -> dict:
@@ -116,6 +130,7 @@ class ChampScheduler:
         self.running_jobs = []
         self.lock = threading.Lock()
         self.resource_monitor = ResourceMonitor(pause_threshold, kill_threshold)
+        self.resource_monitor.set_scheduler(self)  # Set scheduler reference
         self.port = port
         self.tui_controller = None
 
@@ -130,16 +145,31 @@ class ChampScheduler:
 
     def _socket_server(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind(('localhost', self.port))
             s.listen()
             print(f"[Daemon] Listening on port {self.port}")
             while True:
-                conn, _ = s.accept()
-                with conn:
-                    cmd = conn.recv(4096).decode()
-                    if cmd:
-                        response = self._handle_command(cmd)
-                        conn.sendall(response.encode())
+                conn, addr = s.accept()
+                print(f"[Daemon] Client connected from {addr}")
+                # Handle each client in a separate thread
+                threading.Thread(target=self._handle_client, args=(conn,), daemon=True).start()
+
+    def _handle_client(self, conn):
+        """Handle a single client connection"""
+        try:
+            while True:
+                cmd = conn.recv(4096).decode()
+                if not cmd:
+                    break
+                response = self._handle_command(cmd)
+                conn.sendall(response.encode())
+        except (ConnectionResetError, BrokenPipeError):
+            print("[Daemon] Client disconnected")
+        except Exception as e:
+            print(f"[Daemon] Error handling client: {e}")
+        finally:
+            conn.close()
 
     def _handle_command(self, command: str) -> str:
         """Handle incoming commands from clients"""
@@ -192,6 +222,7 @@ class ChampScheduler:
     def _get_status_response(self) -> str:
         """Get status response in JSON format"""
         import json
+        from datetime import datetime
         
         # Get running jobs
         running_jobs = []
@@ -199,11 +230,19 @@ class ChampScheduler:
             for worker in self.running_jobs:
                 if hasattr(worker, 'job_info') and worker.job_info:
                     job_info = worker.job_info
+                    # Convert start_time to ISO format if it's a timestamp
+                    start_time_str = None
+                    if job_info.start_time:
+                        if isinstance(job_info.start_time, (int, float)):
+                            start_time_str = datetime.fromtimestamp(job_info.start_time).isoformat()
+                        else:
+                            start_time_str = job_info.start_time.isoformat()
+                    
                     running_jobs.append({
                         'id': job_info.id,
                         'workload': job_info.workload_name,
                         'status': job_info.status,
-                        'start_time': job_info.start_time.isoformat() if job_info.start_time else None,
+                        'start_time': start_time_str,
                         'progress': job_info.progress
                     })
         
@@ -237,7 +276,7 @@ class ChampScheduler:
 
             if not self.job_queue.empty():
                 cmd, sequence_number = self.job_queue.get()
-                if cmd:
+                if cmd and sequence_number is not None:
                     print(f"[Scheduler] Starting job #{sequence_number}")
                     
                     # Get job info and update status
@@ -246,14 +285,39 @@ class ChampScheduler:
                         job_info.status = "running"
                         job_info.start_time = time.time()
                     
-                    worker = JobWorker(cmd, self.resource_monitor, self.job_queue)
+                    worker = JobWorker(cmd, self.resource_monitor, self.job_queue, self)
                     worker.job_info = job_info  # Attach job info to worker
                     
                     with self.lock:
                         self.running_jobs.append(worker)
                     worker.start()
 
-            time.sleep(5)  # Execute one job every 10 seconds
+            # Dynamic sleep time based on memory usage
+            sleep_time = self._get_dynamic_sleep_time()
+            print(f"[Scheduler] Sleeping for {sleep_time} seconds based on memory usage")
+            time.sleep(sleep_time)
+
+    def _get_dynamic_sleep_time(self):
+        """Calculate dynamic sleep time based on memory usage"""
+        if self.resource_monitor.mem is None:
+            return 5  # Default sleep time if memory info is not available
+        
+        # Calculate memory usage percentage
+        memory_usage_percent = (self.resource_monitor.mem.used / self.resource_monitor.max_memory) * 100
+        
+        # Dynamic sleep time based on memory usage
+        if memory_usage_percent < 50:
+            # Low memory usage: fast scheduling (5 seconds)
+            return 5
+        elif memory_usage_percent >= 80:
+            # High memory usage: slow scheduling (30 seconds)
+            return 30
+        else:
+            # Medium memory usage: linear interpolation between 5 and 30 seconds
+            # Map 50% -> 5 seconds, 80% -> 30 seconds
+            ratio = (memory_usage_percent - 50) / (80 - 50)  # 0 to 1
+            sleep_time = 5 + (ratio * 25)  # 5 to 30 seconds
+            return int(sleep_time)
 
     def _resource_monitor_loop(self):
         while True:

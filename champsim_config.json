@@ -1,11 +1,11 @@
 {
-  "executable_name": "champsim_dram_all_pf",
+  "executable_name": "champsim_feedback_all_pf",
   "block_size": 64,
   "page_size": 4096,
   "heartbeat_frequency": 10000000,
   "num_cores": 1,
   "TMA": true,
-  "page_stat": true,
+  "page_stat": false,
 
   "ooo_cpu": [
     {
