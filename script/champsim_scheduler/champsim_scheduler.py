@@ -256,9 +256,18 @@ class ChampScheduler:
                 'status': job_info.status
             })
         
+        # Get core usage information
+        with self.lock:
+            current_running_jobs = len(self.running_jobs)
+        
         status_data = {
             'running_jobs': running_jobs,
             'queued_jobs': queued_jobs,
+            'core_usage': {
+                'current': current_running_jobs,
+                'max': self.max_cores,
+                'available': self.max_cores - current_running_jobs
+            },
             'resource_monitor': {
                 'should_pause': self.resource_monitor.should_pause(),
                 'can_start_new_job': self.resource_monitor.can_start_new_job()
@@ -269,15 +278,25 @@ class ChampScheduler:
 
     def _scheduler_loop(self):
         while True:
+            # Check memory-based restrictions
             if self.resource_monitor.should_pause() or not self.resource_monitor.can_start_new_job():
                 print("[Scheduler] Pausing due to insufficient memory")
+                time.sleep(1)
+                continue
+
+            # Check core-based restrictions
+            with self.lock:
+                current_running_jobs = len(self.running_jobs)
+            
+            if current_running_jobs >= self.max_cores:
+                print(f"[Scheduler] Pausing due to core limit reached ({current_running_jobs}/{self.max_cores})")
                 time.sleep(1)
                 continue
 
             if not self.job_queue.empty():
                 cmd, sequence_number = self.job_queue.get()
                 if cmd and sequence_number is not None:
-                    print(f"[Scheduler] Starting job #{sequence_number}")
+                    print(f"[Scheduler] Starting job #{sequence_number} (running: {current_running_jobs + 1}/{self.max_cores})")
                     
                     # Get job info and update status
                     job_info = self.job_queue.get_job_info(sequence_number)

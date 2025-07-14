@@ -84,12 +84,18 @@ def make_command(traces, warmup_inst, sim_inst, bin_suffix="", log_name="", log_
 
     if isinstance(traces, str):
         traces = [traces]
+        if feed_path != "":
+            # add feed_path to log_file_path
+            log_file_path = log_file_path + "/" + feed_path
+            if not os.path.exists(log_file_path):
+                os.makedirs(log_file_path)
         log_file_path = log_file_path + "/" + os.path.basename(traces[0]).replace(".champsimtrace.xz", ".log")
     else:
         if log_name == "":
             raise ValueError("log_name must be specified")
         else:
             log_file_path = log_file_path + "/" + log_name
+
 
     cmd = [
         bin_path,
@@ -127,6 +133,7 @@ def main():
     # print(response)
     # exit()
 
+    cnt=0
     for _, row in df.iterrows():
         # cmd = make_command(row["trace_file"], WARM_INST, SIM_INST, bin_suffix="_stat_cxl_all_pf", log_dir="all_cxl/nextline_spp_stream/C1_W20M_S100M", feed_path="") 
         # cmd = make_command(row["trace_file"], WARM_INST, SIM_INST, bin_suffix="_stat_dram_all_pf", log_dir="all_dram/nextline_spp_stream/C1_W20M_S100M", feed_path="") 
@@ -138,13 +145,15 @@ def main():
                 else:
                     trig="percentile"
                     cmd = make_command(row["trace_file"], WARM_INST, SIM_INST, bin_suffix="_feedback_all_pf", log_dir="feedback/nextline_spp_stream/C1_W20M_S100M", feed_path=trigger+"_"+trig+str(thd)) 
+                if cmd != "false":
+                    response = common.submit_command(cmd)
+                    print(response)
+                    cnt+=1
+                else:
+                    print(f"CMD ERROR: {cmd}")
 
-        print(cmd)
-        if cmd != "false":
-            response = common.submit_command(cmd)
-            print(response)
-        else:
-            print(f"Feed file not found")
+    print(f"Total commands: {cnt}")
+
 
 
     

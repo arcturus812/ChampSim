@@ -220,11 +220,19 @@ class TUIController:
     
     def _show_detailed_status(self):
         """Show detailed status information"""
+        # Get core usage
+        with self.scheduler.lock:
+            current_running_jobs = len(self.scheduler.running_jobs)
+        
         status_text = f"""
 [bold]System Status:[/bold]
 - Running Jobs: {len(self.running_jobs)}
 - Queued Jobs: {len(self.queued_jobs)}
 - Total Jobs: {len(self.running_jobs) + len(self.queued_jobs)}
+
+[bold]Core Usage:[/bold]
+- Current: {current_running_jobs}/{self.scheduler.max_cores}
+- Available: {self.scheduler.max_cores - current_running_jobs}
 
 [bold]Resource Monitor:[/bold]
 - Should Pause: {self.scheduler.resource_monitor.should_pause()}
@@ -247,28 +255,20 @@ class TUIController:
             Layout(name="queued", ratio=1)
         )
         
-        # Header
-        header = Panel(
-            Align.center("[bold blue]ChampSim Scheduler TUI Controller[/bold blue]"),
-            border_style="blue"
-        )
+        # Header with core usage info
+        with self.scheduler.lock:
+            current_running_jobs = len(self.scheduler.running_jobs)
         
-        # Running jobs table
-        running_table = self._create_jobs_table(self.running_jobs, "Running Jobs", "green")
-        running_panel = Panel(running_table, title="Running Jobs", border_style="green")
+        header_text = f"ChampSim Scheduler - Cores: {current_running_jobs}/{self.scheduler.max_cores}"
+        layout["header"].update(Panel(header_text, style="bold blue"))
         
-        # Queued jobs table
-        queued_table = self._create_jobs_table(self.queued_jobs, "Queued Jobs", "yellow")
-        queued_panel = Panel(queued_table, title="Queued Jobs", border_style="yellow")
+        # Body content
+        layout["running"].update(self._create_jobs_table(self.running_jobs, "Running Jobs", "green"))
+        layout["queued"].update(self._create_jobs_table(self.queued_jobs, "Queued Jobs", "yellow"))
         
-        # Footer with help
-        footer_text = "[bold]Commands:[/bold] h=help, q=quit, kill <id>, pause <id>, resume <id>"
-        footer = Panel(Align.center(footer_text), border_style="cyan")
-        
-        layout["header"].update(header)
-        layout["running"].update(running_panel)
-        layout["queued"].update(queued_panel)
-        layout["footer"].update(footer)
+        # Footer with status
+        footer_text = f"Memory: {self.scheduler.resource_monitor.mem.used / (1024**3):.1f}GB / {self.scheduler.resource_monitor.max_memory / (1024**3):.1f}GB"
+        layout["footer"].update(Panel(footer_text, style="bold cyan"))
         
         return layout
     
