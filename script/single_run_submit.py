@@ -73,6 +73,11 @@ def make_command(traces, warmup_inst, sim_inst, bin_suffix="", log_name="", log_
             return "false"
 
     bin_path=exp_env.SIM_BIN + bin_suffix
+    # check bin is exist
+    if not os.path.exists(bin_path):
+        print(f"Bin not found: {bin_path}")
+        return "false"
+
     log_file_path=""
     if log_dir == "":
         log_file_path = exp_env.LOG_ROOT + "/last_exp"
@@ -135,22 +140,33 @@ def main():
 
     cnt=0
     for _, row in df.iterrows():
+        cmd = make_command(row["trace_file"], WARM_INST, SIM_INST, bin_suffix="_stat_all_pf_cxl", log_dir="all_cxl/nextline_spp_stream/C1_W20M_S100M", feed_path="") 
+        # cmd = make_command(row["trace_file"], WARM_INST, SIM_INST, bin_suffix="_stat_all_pf_dram", log_dir="all_dram/nextline_spp_stream/C1_W20M_S100M", feed_path="") 
+        # cmd = make_command(row["trace_file"], WARM_INST, SIM_INST, bin_suffix="_cxl_legacy_pf", log_dir="all_cxl/nextline_spp_stream/C1_W20M_S100M", feed_path="") 
+        # cmd = make_command(row["trace_file"], WARM_INST, SIM_INST, bin_suffix="_cxl_sota_pf", log_dir="all_cxl/nextline_spp_stream/C1_W20M_S100M", feed_path="") 
         # cmd = make_command(row["trace_file"], WARM_INST, SIM_INST, bin_suffix="_stat_cxl_all_pf", log_dir="all_cxl/nextline_spp_stream/C1_W20M_S100M", feed_path="") 
         # cmd = make_command(row["trace_file"], WARM_INST, SIM_INST, bin_suffix="_stat_dram_all_pf", log_dir="all_dram/nextline_spp_stream/C1_W20M_S100M", feed_path="") 
-        for trigger in ["TEMP_LOCALITY", "SPATIAL_LOCALITY"]:
-            for thd in [0.9, 0.8, 0.7, 0.6]:
-                if trigger == "TEMP_LOCALITY":
-                    trig="thd"
-                    cmd = make_command(row["trace_file"], WARM_INST, SIM_INST, bin_suffix="_feedback_all_pf", log_dir="feedback/nextline_spp_stream/C1_W20M_S100M", feed_path=trigger+"_"+trig+str(thd)) 
-                else:
-                    trig="percentile"
-                    cmd = make_command(row["trace_file"], WARM_INST, SIM_INST, bin_suffix="_feedback_all_pf", log_dir="feedback/nextline_spp_stream/C1_W20M_S100M", feed_path=trigger+"_"+trig+str(thd)) 
-                if cmd != "false":
-                    response = common.submit_command(cmd)
-                    print(response)
-                    cnt+=1
-                else:
-                    print(f"CMD ERROR: {cmd}")
+        # for trigger in ["TEMP_LOCALITY", "SPATIAL_LOCALITY"]:
+        #     for thd in [0.9, 0.8, 0.7, 0.6]:
+        #         if trigger == "TEMP_LOCALITY":
+        #             trig="thd"
+        #             cmd = make_command(row["trace_file"], WARM_INST, SIM_INST, bin_suffix="_feedback_all_pf", log_dir="feedback/nextline_spp_stream/C1_W20M_S100M", feed_path=trigger+"_"+trig+str(thd)) 
+        #         else:
+        #             trig="percentile"
+        #             cmd = make_command(row["trace_file"], WARM_INST, SIM_INST, bin_suffix="_feedback_all_pf", log_dir="feedback/nextline_spp_stream/C1_W20M_S100M", feed_path=trigger+"_"+trig+str(thd)) 
+        #         if cmd != "false":
+        #             response = common.submit_command(cmd)
+        #             print(response)
+        #             cnt+=1
+        #         else:
+        #             print(f"CMD ERROR: {cmd}")
+
+        if cmd != "false":
+            response = common.submit_command(cmd)
+            print(response)
+            cnt+=1
+        else:
+            print(f"CMD ERROR: {cmd}")
 
     print(f"Total commands: {cnt}")
 

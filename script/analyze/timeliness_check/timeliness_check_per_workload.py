@@ -3,6 +3,7 @@ import os
 import glob
 
 # Define paths
+nfs_path = os.path.expanduser('/mnt/nvme1/nfs')
 base_path = os.path.expanduser('~/workspace/storage/data/ChampSim/per_page_data')
 dram_path = os.path.join(base_path, 'all_dram/nextline_spp_stream/C1_W20M_S100M')
 cxl_path = os.path.join(base_path, 'all_cxl/nextline_spp_stream/C1_W20M_S100M')

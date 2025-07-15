@@ -1,0 +1,164 @@
+import pandas as pd
+import os
+import glob
+import matplotlib.pyplot as plt
+import numpy as np
+
+prefetcher_setup="nextline_spp_stream"
+simulation_setup="C1_W20M_S100M"
+
+nfs_path = os.path.expanduser('/mnt/nvme1/nfs')
+base_path = os.path.expanduser('~/workspace/storage/data/ChampSim/per_page_data')
+dram_path = os.path.join(base_path, 'all_dram', prefetcher_setup, simulation_setup)
+cxl_path = os.path.join(base_path, 'all_cxl', prefetcher_setup, simulation_setup)
+graph_path = os.path.join('~/workspace/storage/graph', 'timeliness_check_per_page')
+
+src_csv_header="pfn,vfn,cpu,l1d_hit,l1d_miss,l1d_prefetch,l1d_useful_prefetch_hit,l1d_mshr_pf_hit,l1d_mshr_pf_hit_cycle,l1d_pf_degree_sum,l1d_pf_degree_cnt,l1d_useless_prefetch,l1d_miss_handle_cycle,l1d_miss_handle_cnt,l2c_hit,l2c_miss,l2c_prefetch,l2c_useful_prefetch_hit,l2c_mshr_pf_hit,l2c_mshr_pf_hit_cycle,l2c_pf_degree_sum,l2c_pf_degree_cnt,l2c_useless_prefetch,l2c_miss_handle_cycle,l2c_miss_handle_cnt,llc_hit,llc_miss,llc_prefetch,llc_useful_prefetch_hit,llc_mshr_pf_hit,llc_mshr_pf_hit_cycle,llc_pf_degree_sum,llc_pf_degree_cnt,llc_useless_prefetch,llc_miss_handle_cycle,llc_miss_handle_cnt"
+INSTRUCTION=100000000
+KI=INSTRUCTION/1000
+
+# Collect CSV files from both directories
+dram_files = glob.glob(os.path.join(dram_path, '*.csv'))
+cxl_files = glob.glob(os.path.join(cxl_path, '*.csv'))
+
+def draw_cdf(workload_name, df, MPKI, output_png_path, target_column):
+    # Create output directory if it doesn't exist
+    os.makedirs(os.path.dirname(output_png_path), exist_ok=True)
+    
+    # Remove rows with NaN or infinite values in target column
+    df_clean = df.dropna(subset=[target_column])
+    df_clean = df_clean[np.isfinite(df_clean[target_column])]
+    
+    if len(df_clean) == 0:
+        print(f"No valid data for {workload_name} in column {target_column}")
+        return
+    
+    # Sort values for CDF calculation
+    sorted_values = np.sort(df_clean[target_column])
+    
+    # Calculate CDF
+    n = len(sorted_values)
+    y_values = np.arange(1, n + 1) / n
+    
+    # Create the plot
+    plt.figure(figsize=(10, 6))
+    plt.plot(y_values, sorted_values, linewidth=2)
+    
+    # Set title with workload name and MPKI
+    plt.title(f'{workload_name} MPKI: {MPKI:.2f}', fontsize=14, fontweight='bold')
+    
+    # Set y-axis (target_column values) with maximum 5 labels
+    y_min = sorted_values.min()
+    y_max = sorted_values.max()
+    plt.ylim(y_min, y_max)
+    
+    # Create 5 evenly spaced y-axis labels
+    y_ticks = np.linspace(y_min, y_max, 5)
+    y_labels = [f'{tick:.2f}' for tick in y_ticks]
+    plt.yticks(y_ticks, y_labels)
+    plt.ylabel(target_column, fontsize=12)
+    
+    # Set x-axis (page count) with maximum 5 labels
+    plt.xlim(0, 1)
+    x_ticks = np.linspace(0, 1, 5)
+    x_labels = [f'{int(tick * n)}' for tick in x_ticks]
+    plt.xticks(x_ticks, x_labels)
+    plt.xlabel('Page Count', fontsize=12)
+    
+    # Add horizontal grid lines at y-axis tick positions
+    plt.grid(True, alpha=0.3, axis='y', linestyle='-')
+    # Add vertical grid lines at x-axis tick positions
+    plt.grid(True, alpha=0.3, axis='x', linestyle='-')
+    
+    # Adjust layout and save
+    plt.tight_layout()
+    plt.savefig(output_png_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    print(f"CDF plot saved: {output_png_path}")
+
+
+def calculate_timeliness(workload_name, file_path):
+    df = pd.read_csv(file_path)
+    # check if the header is the same as src_csv_header
+    if df.columns.tolist() != src_csv_header.split(','):
+        print(f"Header mismatch in {workload_name}")
+        return
+
+    # calculate MPKI(all_llc_miss)
+    all_llc_miss = df['llc_miss'].sum()
+    MPKI = all_llc_miss / KI
+    
+    # calculate the timeliness
+    df['pf_useless'] = df['l1d_useless_prefetch'] + df['l2c_useless_prefetch'] + df['llc_useless_prefetch']
+    df['pf_ontime_hit'] = df['l1d_useful_prefetch_hit'] + df['l2c_useful_prefetch_hit'] + df['llc_useful_prefetch_hit']
+    df['pf_mshr_hit'] = df['l1d_mshr_pf_hit'] + df['l2c_mshr_pf_hit'] + df['llc_mshr_pf_hit']
+
+    df['pf_mshr_delay_sum'] = df['l1d_mshr_pf_hit_cycle'] + df['l2c_mshr_pf_hit_cycle'] + df['llc_mshr_pf_hit_cycle']
+    df['pf_mshr_delay_avg'] = df['pf_mshr_delay_sum'] / df['pf_mshr_hit']
+
+    return df, MPKI
+
+
+def main():
+    cxl_file_name_list = []
+    dram_file_name_list = []
+    calculated_results ={}
+    for cxl_file in cxl_files:
+        cxl_file_name_list.append(os.path.basename(cxl_file))
+    for dram_file in dram_files:
+        dram_file_name_list.append(os.path.basename(dram_file))
+    
+    # file exist both dir
+    for cxl_file_name in cxl_file_name_list:
+        if cxl_file_name not in dram_file_name_list:
+            # remove from cxl_file_name_list
+            cxl_file_name_list.remove(cxl_file_name)
+
+    for cxl_file_name in cxl_file_name_list:
+        workload_name = os.path.basename(cxl_file_name).replace('.csv', '')
+        cxl_file_path = os.path.join(cxl_path, cxl_file_name)
+        # output_png_path = os.path.join(graph_path, 'all_cxl', prefetcher_setup, simulation_setup, f'{workload_name}.png')
+        output_png_path = os.path.join(nfs_path, 'timeliness_check_per_page', 'all_cxl', prefetcher_setup, simulation_setup, f'{workload_name}.png')
+        result = calculate_timeliness(workload_name, cxl_file_path)
+        if result is not None:
+            df, MPKI = result
+            draw_cdf(workload_name, df, MPKI, output_png_path, 'pf_mshr_delay_avg')
+            calculated_results[workload_name] = {
+                'df': df,
+                'MPKI': MPKI,
+                'output_png_path': output_png_path
+            }
+        else:
+            print(f"Skip drawing for {workload_name} due to header mismatch or error")
+    
+    # find largest pf_mshr_delay_avg, pf_useless, pf_ontime_hit, pf_mshr_hit among all results
+    max_pf_mshr_delay_avg = 0
+    max_pf_useless = 0
+    max_pf_ontime_hit = 0
+    max_pf_mshr_hit = 0
+    for workload_name, result in calculated_results.items():
+        df = result['df']
+        if df['pf_mshr_delay_avg'].max() > max_pf_mshr_delay_avg:
+            max_pf_mshr_delay_avg = df['pf_mshr_delay_avg'].max()
+        if df['pf_useless'].max() > max_pf_useless:
+            max_pf_useless = df['pf_useless'].max()
+        if df['pf_ontime_hit'].max() > max_pf_ontime_hit:
+            max_pf_ontime_hit = df['pf_ontime_hit'].max()
+        if df['pf_mshr_hit'].max() > max_pf_mshr_hit:
+            max_pf_mshr_hit = df['pf_mshr_hit'].max()
+    print(f"max_pf_mshr_delay_avg: {max_pf_mshr_delay_avg}")
+    print(f"max_pf_useless: {max_pf_useless}")
+    print(f"max_pf_ontime_hit: {max_pf_ontime_hit}")
+    print(f"max_pf_mshr_hit: {max_pf_mshr_hit}")
+
+    for workload_name, result in calculated_results.items():
+        df = result['df']
+        MPKI = result['MPKI']
+        output_png_path = result['output_png_path']
+        # draw(workload_name, df, MPKI, output_png_path, max_pf_mshr_delay_avg, max_pf_useless, max_pf_ontime_hit, max_pf_mshr_hit)
+        draw_cdf(workload_name, df, MPKI, output_png_path, 'pf_mshr_delay_avg')
+        del df
+
+if __name__ == "__main__":
+    main()

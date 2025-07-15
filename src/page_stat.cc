@@ -103,6 +103,7 @@ void page_stat_logger::merge_page_stat(page_stat* src, page_stat* dst)
   dst->l1d->accumulated_miss_handle_cnt += src->l1d->accumulated_miss_handle_cnt;
   dst->l1d->mshr_prefetch_hit += src->l1d->mshr_prefetch_hit;
   dst->l1d->accumulated_mshr_prefetch_hit_cycle += src->l1d->accumulated_mshr_prefetch_hit_cycle;
+  dst->l1d->accumulated_mshr_prefetch_hit_delay_cycle += src->l1d->accumulated_mshr_prefetch_hit_delay_cycle;
 
   // l2c
   dst->l2c->hit += src->l2c->hit;
@@ -116,6 +117,7 @@ void page_stat_logger::merge_page_stat(page_stat* src, page_stat* dst)
   dst->l2c->accumulated_miss_handle_cnt += src->l2c->accumulated_miss_handle_cnt;
   dst->l2c->mshr_prefetch_hit += src->l2c->mshr_prefetch_hit;
   dst->l2c->accumulated_mshr_prefetch_hit_cycle += src->l2c->accumulated_mshr_prefetch_hit_cycle;
+  dst->l2c->accumulated_mshr_prefetch_hit_delay_cycle += src->l2c->accumulated_mshr_prefetch_hit_delay_cycle;
 
   // llc
   dst->llc->hit += src->llc->hit;
@@ -129,6 +131,7 @@ void page_stat_logger::merge_page_stat(page_stat* src, page_stat* dst)
   dst->llc->accumulated_miss_handle_cnt += src->llc->accumulated_miss_handle_cnt;
   dst->llc->mshr_prefetch_hit += src->llc->mshr_prefetch_hit;
   dst->llc->accumulated_mshr_prefetch_hit_cycle += src->llc->accumulated_mshr_prefetch_hit_cycle;
+  dst->llc->accumulated_mshr_prefetch_hit_delay_cycle += src->llc->accumulated_mshr_prefetch_hit_delay_cycle;
 }
 
 bool page_stat_logger::event_log(std::string caller, PAGE_STAT_EVENT event, uint64_t pfn, uint64_t vfn, int cpu, uint64_t value)
@@ -276,6 +279,15 @@ bool page_stat_logger::event_log(std::string caller, PAGE_STAT_EVENT event, uint
     stat->llc->accumulated_miss_handle_cnt++;
     stat->llc->accumulated_miss_handle_cycle += value;
     break;
+  case PAGE_STAT_CALLER::L1D + PAGE_STAT_EVENT::MSHR_PF_HIT_DELAY_CYCLE:
+    stat->l1d->accumulated_mshr_prefetch_hit_delay_cycle += value;
+    break;
+  case PAGE_STAT_CALLER::L2C + PAGE_STAT_EVENT::MSHR_PF_HIT_DELAY_CYCLE:
+    stat->l2c->accumulated_mshr_prefetch_hit_delay_cycle += value;
+    break;
+  case PAGE_STAT_CALLER::LLC + PAGE_STAT_EVENT::MSHR_PF_HIT_DELAY_CYCLE:
+    stat->llc->accumulated_mshr_prefetch_hit_delay_cycle += value;
+    break;
   default:
     fmt::print("[PAGE_STAT] WARNING: unknown event: {} {}\n", caller, static_cast<int>(event));
     return false;
@@ -285,10 +297,10 @@ bool page_stat_logger::event_log(std::string caller, PAGE_STAT_EVENT event, uint
 
 void page_stat_logger::print_page_stat_map_to_csv(){
     fmt::print("[START_PAGE_STAT] Printing page stat map to csv format\n");
-    fmt::print("pfn,vfn,cpu,l1d_hit,l1d_miss,l1d_prefetch,l1d_useful_prefetch_hit,l1d_mshr_pf_hit,l1d_mshr_pf_hit_cycle,l1d_pf_degree_sum,l1d_pf_degree_cnt,l1d_useless_prefetch,l1d_miss_handle_cycle,l1d_miss_handle_cnt,l2c_hit,l2c_miss,l2c_prefetch,l2c_useful_prefetch_hit,l2c_mshr_pf_hit,l2c_mshr_pf_hit_cycle,l2c_pf_degree_sum,l2c_pf_degree_cnt,l2c_useless_prefetch,l2c_miss_handle_cycle,l2c_miss_handle_cnt,llc_hit,llc_miss,llc_prefetch,llc_useful_prefetch_hit,llc_mshr_pf_hit,llc_mshr_pf_hit_cycle,llc_pf_degree_sum,llc_pf_degree_cnt,llc_useless_prefetch,llc_miss_handle_cycle,llc_miss_handle_cnt\n");
+    fmt::print("pfn,vfn,cpu,l1d_hit,l1d_miss,l1d_prefetch,l1d_useful_prefetch_hit,l1d_mshr_pf_hit,l1d_mshr_pf_hit_cycle,l1d_mshr_pf_hit_delay_cycle,l1d_pf_degree_sum,l1d_pf_degree_cnt,l1d_useless_prefetch,l1d_miss_handle_cycle,l1d_miss_handle_cnt,l2c_hit,l2c_miss,l2c_prefetch,l2c_useful_prefetch_hit,l2c_mshr_pf_hit,l2c_mshr_pf_hit_cycle,l2c_mshr_pf_hit_delay_cycle,l2c_pf_degree_sum,l2c_pf_degree_cnt,l2c_useless_prefetch,l2c_miss_handle_cycle,l2c_miss_handle_cnt,llc_hit,llc_miss,llc_prefetch,llc_useful_prefetch_hit,llc_mshr_pf_hit,llc_mshr_pf_hit_cycle,llc_mshr_pf_hit_delay_cycle,llc_pf_degree_sum,llc_pf_degree_cnt,llc_useless_prefetch,llc_miss_handle_cycle,llc_miss_handle_cnt\n");
     for (auto &[pfn, page_stat] : page_stat_map){
         if(page_stat.mapped){
-            fmt::print("{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
+            fmt::print("{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
             pfn, 
             page_stat.vfn,
             page_stat.cpu,
@@ -298,6 +310,7 @@ void page_stat_logger::print_page_stat_map_to_csv(){
             page_stat.l1d->useful_prefetch_hit,
             page_stat.l1d->mshr_prefetch_hit,
             page_stat.l1d->accumulated_mshr_prefetch_hit_cycle,
+            page_stat.l1d->accumulated_mshr_prefetch_hit_delay_cycle,
             page_stat.l1d->pf_degree_sum,
             page_stat.l1d->pf_degree_cnt,
             page_stat.l1d->useless_prefetch,
@@ -309,6 +322,7 @@ void page_stat_logger::print_page_stat_map_to_csv(){
             page_stat.l2c->useful_prefetch_hit,
             page_stat.l2c->mshr_prefetch_hit,
             page_stat.l2c->accumulated_mshr_prefetch_hit_cycle,
+            page_stat.l2c->accumulated_mshr_prefetch_hit_delay_cycle,
             page_stat.l2c->pf_degree_sum,
             page_stat.l2c->pf_degree_cnt,
             page_stat.l2c->useless_prefetch,
@@ -320,6 +334,7 @@ void page_stat_logger::print_page_stat_map_to_csv(){
             page_stat.llc->useful_prefetch_hit,
             page_stat.llc->mshr_prefetch_hit,
             page_stat.llc->accumulated_mshr_prefetch_hit_cycle,
+            page_stat.llc->accumulated_mshr_prefetch_hit_delay_cycle,
             page_stat.llc->pf_degree_sum,
             page_stat.llc->pf_degree_cnt,
             page_stat.llc->useless_prefetch,

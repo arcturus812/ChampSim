@@ -250,6 +250,18 @@ bool CACHE::handle_fill(const mshr_type& fill_mshr)
 
     if (fill_mshr.type == access_type::PREFETCH) {
       ++sim_stats.pf_fill;
+      if (fill_mshr.time_pf_mshr_hit != decltype(fill_mshr.time_pf_mshr_hit){}) { // [PHW] if the prefetch MSHR was hit (i.e., useful prefetch), log the MSHR prefetch hit cycle
+        if (ENABLE_PAGE_STATS) {
+          if (this->NAME.find("L1D") != std::string::npos || this->NAME.find("L2C") != std::string::npos || this->NAME.find("LLC") != std::string::npos) {
+            uint64_t pfn = fill_mshr.address.to<uint64_t>() >> LOG2_PAGE_SIZE;
+            uint64_t vfn = fill_mshr.v_address.to<uint64_t>() >> LOG2_PAGE_SIZE;
+            std::string caller = this->NAME;
+            // Calculate cycles between MSHR hit and fill
+            uint64_t pf_hit_delay_cycle = (current_time - (fill_mshr.time_pf_mshr_hit + clock_period)) / clock_period;
+            g_page_stat_logger.event_log(caller, PAGE_STAT_EVENT::MSHR_PF_HIT_DELAY_CYCLE, pfn, vfn, fill_mshr.cpu, pf_hit_delay_cycle);
+          }
+        }
+      }
     }
 
     *way = fill_block(fill_mshr, metadata_thru);
@@ -389,6 +401,7 @@ bool CACHE::handle_miss(const tag_lookup_type& handle_pkt)
     if (mshr_entry->type == access_type::PREFETCH && handle_pkt.type != access_type::PREFETCH) {
       // Mark the prefetch as useful
       if (mshr_entry->prefetch_from_this) {
+        mshr_entry->time_pf_mshr_hit = current_time;
         if(ENABLE_PAGE_STATS){
           if (this->NAME.find("L1D") != std::string::npos || this->NAME.find("L2C") != std::string::npos || this->NAME.find("LLC") != std::string::npos){
             uint64_t pfn = handle_pkt.address.to<uint64_t>() >> LOG2_PAGE_SIZE;
