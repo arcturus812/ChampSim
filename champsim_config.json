@@ -1,5 +1,5 @@
 {
-  "executable_name": "champsim_stat_all_pf_far",
+  "executable_name": "champsim_test",
   "block_size": 64,
   "page_size": 4096,
   "heartbeat_frequency": 10000000,

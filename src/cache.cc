@@ -126,6 +126,10 @@ CACHE::mshr_type CACHE::mshr_type::merge(mshr_type predecessor, mshr_type succes
   retval.to_return = merged_return;
   retval.data_promise = predecessor.data_promise;
 
+  // [PHW] Preserve time_pf_mshr_hit from predecessor (it should have been set when prefetch was hit)
+  retval.time_pf_mshr_hit = predecessor.time_pf_mshr_hit;
+
+
   if constexpr (champsim::debug_print) {
     if (successor.type == access_type::PREFETCH) {
       fmt::print("[MSHR] {} address {} type: {} into address {} type: {}\n", __func__, successor.address,
@@ -248,18 +252,18 @@ bool CACHE::handle_fill(const mshr_type& fill_mshr)
       }
     }
 
-    if (fill_mshr.type == access_type::PREFETCH) {
+    if (fill_mshr.type == access_type::PREFETCH) { // [PHW] after merge(prefetch->demand), fill_mshr.type is demand not prefetch
       ++sim_stats.pf_fill;
-      if (fill_mshr.time_pf_mshr_hit != decltype(fill_mshr.time_pf_mshr_hit){}) { // [PHW] if the prefetch MSHR was hit (i.e., useful prefetch), log the MSHR prefetch hit cycle
-        if (ENABLE_PAGE_STATS) {
-          if (this->NAME.find("L1D") != std::string::npos || this->NAME.find("L2C") != std::string::npos || this->NAME.find("LLC") != std::string::npos) {
-            uint64_t pfn = fill_mshr.address.to<uint64_t>() >> LOG2_PAGE_SIZE;
-            uint64_t vfn = fill_mshr.v_address.to<uint64_t>() >> LOG2_PAGE_SIZE;
-            std::string caller = this->NAME;
-            // Calculate cycles between MSHR hit and fill
-            uint64_t pf_hit_delay_cycle = (current_time - (fill_mshr.time_pf_mshr_hit + clock_period)) / clock_period;
-            g_page_stat_logger.event_log(caller, PAGE_STAT_EVENT::MSHR_PF_HIT_DELAY_CYCLE, pfn, vfn, fill_mshr.cpu, pf_hit_delay_cycle);
-          }
+    }
+    if (ENABLE_PAGE_STATS) { // [PHW] so we just log every entry that has not max() time_pf_mshr_hit
+      if (fill_mshr.time_pf_mshr_hit != champsim::chrono::clock::time_point::max()) { // [PHW] if the prefetch MSHR was hit (i.e., useful prefetch), log the MSHR prefetch hit cycle
+        if (this->NAME.find("L1D") != std::string::npos || this->NAME.find("L2C") != std::string::npos || this->NAME.find("LLC") != std::string::npos) {
+          uint64_t pfn = fill_mshr.address.to<uint64_t>() >> LOG2_PAGE_SIZE;
+          uint64_t vfn = fill_mshr.v_address.to<uint64_t>() >> LOG2_PAGE_SIZE;
+          std::string caller = this->NAME;
+          // Calculate cycles between MSHR hit and fill
+          uint64_t pf_hit_delay_cycle = (current_time - (fill_mshr.time_pf_mshr_hit + clock_period)) / clock_period;
+          g_page_stat_logger.event_log(caller, PAGE_STAT_EVENT::MSHR_PF_HIT_DELAY_CYCLE, pfn, vfn, fill_mshr.cpu, pf_hit_delay_cycle);
         }
       }
     }
@@ -419,7 +423,7 @@ bool CACHE::handle_miss(const tag_lookup_type& handle_pkt)
     // COLLECT STATS
     sim_stats.mshr_merge.increment(std::pair{to_allocate.type, to_allocate.cpu});
 
-    *mshr_entry = mshr_type::merge(*mshr_entry, to_allocate);
+    *mshr_entry = mshr_type::merge(*mshr_entry, to_allocate); // [PHW] if prefetch->demand, enqueue time overwritten
   } else {
     if (mshr_full) { // not enough MSHR resource
       return false;  // TODO should we allow prefetches anyway if they will not be filled to this level?
@@ -603,6 +607,7 @@ long CACHE::operate()
     }
     return this->handle_miss(pkt); // Treat writes (that is, stores) like reads
   };
+
   champsim::bandwidth tag_check_bw{MAX_TAG};
   auto [tag_check_ready_begin, tag_check_ready_end] =
       champsim::get_span_p(std::begin(inflight_tag_check), std::end(inflight_tag_check), tag_check_bw,
