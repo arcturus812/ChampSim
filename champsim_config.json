@@ -1,5 +1,5 @@
 {
-  "executable_name": "champsim_test",
+  "executable_name": "champsim_log_cache_hit_dram",
   "block_size": 64,
   "page_size": 4096,
   "heartbeat_frequency": 10000000,

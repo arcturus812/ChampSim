@@ -21,7 +21,7 @@ KI=INSTRUCTION/1000
 dram_files = glob.glob(os.path.join(dram_path, '*.csv'))
 cxl_files = glob.glob(os.path.join(cxl_path, '*.csv'))
 
-def draw_cdf(workload_name, df, MPKI, output_png_path, target_column):
+def draw_dist(workload_name, df, MPKI, output_png_path, target_column):
     # Create output directory if it doesn't exist
     os.makedirs(os.path.dirname(output_png_path), exist_ok=True)
     
@@ -33,10 +33,10 @@ def draw_cdf(workload_name, df, MPKI, output_png_path, target_column):
         print(f"No valid data for {workload_name} in column {target_column}")
         return
     
-    # Sort values for CDF calculation
+    # Sort values for dist calculation
     sorted_values = np.sort(df_clean[target_column])
     
-    # Calculate CDF
+    # Calculate dist
     n = len(sorted_values)
     y_values = np.arange(1, n + 1) / n
     
@@ -75,10 +75,10 @@ def draw_cdf(workload_name, df, MPKI, output_png_path, target_column):
     plt.savefig(output_png_path, dpi=300, bbox_inches='tight')
     plt.close()
     
-    print(f"CDF plot saved: {output_png_path}")
+    print(f"dist plot saved: {output_png_path}")
 
 
-def draw_cdf_comparison(workload_name, cxl_df, cxl_MPKI, dram_df, dram_MPKI, output_png_path, target_column):
+def draw_dist_comparison(workload_name, cxl_df, cxl_MPKI, dram_df, dram_MPKI, output_png_path, target_column):
     # Create output directory if it doesn't exist
     os.makedirs(os.path.dirname(output_png_path), exist_ok=True)
     
@@ -93,11 +93,11 @@ def draw_cdf_comparison(workload_name, cxl_df, cxl_MPKI, dram_df, dram_MPKI, out
         print(f"No valid data for {workload_name} in column {target_column}")
         return
     
-    # Sort values for CDF calculation
+    # Sort values for dist calculation
     cxl_sorted = np.sort(cxl_clean[target_column])
     dram_sorted = np.sort(dram_clean[target_column])
     
-    # Calculate CDF for both datasets
+    # Calculate dist for both datasets
     cxl_n = len(cxl_sorted)
     dram_n = len(dram_sorted)
     
@@ -111,12 +111,12 @@ def draw_cdf_comparison(workload_name, cxl_df, cxl_MPKI, dram_df, dram_MPKI, out
     # Create the plot
     plt.figure(figsize=(12, 8))
     
-    # Plot both CDFs
+    # Plot both dists
     plt.plot(cxl_y_values, cxl_sorted, linewidth=2, label=f'CXL (MPKI: {cxl_MPKI:.2f})', color='red')
     plt.plot(dram_y_values, dram_sorted, linewidth=2, label=f'DRAM (MPKI: {dram_MPKI:.2f})', color='blue')
     
     # Set title with workload name
-    plt.title(f'{workload_name} - CDF Comparison', fontsize=14, fontweight='bold')
+    plt.title(f'{workload_name} - dist Comparison', fontsize=14, fontweight='bold')
     
     # Set y-axis with maximum 5 labels
     plt.ylim(y_min, y_max)
@@ -146,7 +146,7 @@ def draw_cdf_comparison(workload_name, cxl_df, cxl_MPKI, dram_df, dram_MPKI, out
     plt.savefig(output_png_path, dpi=300, bbox_inches='tight')
     plt.close()
     
-    print(f"CDF comparison plot saved: {output_png_path}")
+    print(f"dist comparison plot saved: {output_png_path}")
 
 
 def calculate_timeliness(workload_name, file_path):
@@ -170,6 +170,14 @@ def calculate_timeliness(workload_name, file_path):
 
     df['pf_mshr_retrive_delay_sum'] = df['l1d_mshr_pf_hit_delay_cycle'] + df['l2c_mshr_pf_hit_delay_cycle'] + df['llc_mshr_pf_hit_delay_cycle']
     df['pf_mshr_retrive_delay_avg'] = df['pf_mshr_retrive_delay_sum'] / df['pf_mshr_hit']
+
+    #calculate l1d prefetch hit rate
+    df['prefetch_hit'] = df['l1d_useful_prefetch_hit'] + df['l2c_useful_prefetch_hit'] + df['llc_useful_prefetch_hit']
+    df['prefetch'] = df['l1d_prefetch'] + df['l2c_prefetch'] + df['llc_prefetch']
+    df['prefetch_hit_rate'] = df['prefetch_hit'] / df['prefetch']
+
+    # print df length
+    print(f"df length: {len(df)}")
 
     return df, MPKI
 
@@ -205,10 +213,11 @@ def main():
             dram_df, dram_MPKI = dram_result
             
             # Create comparison graph
-            target_column = ['pf_mshr_arrival_delay_avg', 'pf_mshr_retrive_delay_avg', 'pf_useless', 'pf_ontime_hit', 'pf_mshr_hit']
+            # target_column = ['pf_mshr_arrival_delay_avg', 'pf_mshr_retrive_delay_avg', 'pf_useless', 'pf_ontime_hit', 'pf_mshr_hit', 'l1d_pf_hit_rate', 'l2c_pf_hit_rate', 'llc_pf_hit_rate']
+            target_column = ['prefetch_hit_rate']
             for column in target_column:
                 output_png_path = os.path.join(nfs_path, 'timeliness_check_per_page', 'comparison', prefetcher_setup, simulation_setup, column, f'{workload_name}.png')
-                draw_cdf_comparison(workload_name, cxl_df, cxl_MPKI, dram_df, dram_MPKI, output_png_path, column)
+                draw_dist_comparison(workload_name, cxl_df, cxl_MPKI, dram_df, dram_MPKI, output_png_path, column)
             
             # Clean up memory
             del cxl_df, dram_df

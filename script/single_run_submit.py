@@ -140,8 +140,8 @@ def main():
 
     cnt=0
     for _, row in df.iterrows():
-        cmd = make_command(row["trace_file"], WARM_INST, SIM_INST, bin_suffix="_stat_all_pf_cxl", log_dir="all_cxl/nextline_spp_stream/C1_W20M_S100M", feed_path="") 
-        # cmd = make_command(row["trace_file"], WARM_INST, SIM_INST, bin_suffix="_stat_all_pf_dram", log_dir="all_dram/nextline_spp_stream/C1_W20M_S100M", feed_path="") 
+        # cmd = make_command(row["trace_file"], WARM_INST, SIM_INST, bin_suffix="_stat_all_pf_cxl", log_dir="all_cxl/nextline_spp_stream/C1_W20M_S100M", feed_path="") 
+        cmd = make_command(row["trace_file"], WARM_INST, SIM_INST, bin_suffix="_stat_all_pf_dram", log_dir="all_dram/nextline_spp_stream/C1_W20M_S100M", feed_path="") 
         # cmd = make_command(row["trace_file"], WARM_INST, SIM_INST, bin_suffix="_cxl_legacy_pf", log_dir="all_cxl/nextline_spp_stream/C1_W20M_S100M", feed_path="") 
         # cmd = make_command(row["trace_file"], WARM_INST, SIM_INST, bin_suffix="_cxl_sota_pf", log_dir="all_cxl/nextline_spp_stream/C1_W20M_S100M", feed_path="") 
         # cmd = make_command(row["trace_file"], WARM_INST, SIM_INST, bin_suffix="_stat_cxl_all_pf", log_dir="all_cxl/nextline_spp_stream/C1_W20M_S100M", feed_path="") 
