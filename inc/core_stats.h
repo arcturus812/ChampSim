@@ -18,6 +18,10 @@ struct cpu_stats {
   champsim::stats::event_counter<branch_type> total_branch_types = {};
   champsim::stats::event_counter<branch_type> branch_type_misses = {};
 
+  // Stall statistics - simplified to two categories
+  uint64_t data_stall_cycles = 0;       // Data not arriving from memory hierarchy
+  uint64_t structural_stall_cycles = 0; // Other structural hazards
+
   [[nodiscard]] auto instrs() const { return end_instrs - begin_instrs; }
   [[nodiscard]] auto cycles() const { return end_cycles - begin_cycles; }
 };

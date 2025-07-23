@@ -184,7 +184,7 @@ public:
   [[nodiscard]] auto sim_cycle() const { return (current_time.time_since_epoch() / clock_period) - sim_stats.begin_cycles; }
 
   void print_deadlock() final;
-
+  
 #include "module_decl.inc"
 
   struct branch_module_concept {
@@ -252,6 +252,10 @@ public:
         btb_module_pimpl(std::make_unique<btb_module_model<Ts...>>(this))
   {
   }
+
+private:
+  // Add new method for stall tracking
+  void track_stall_causes();
 };
 
 template <typename... Bs>

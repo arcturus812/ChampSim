@@ -56,6 +56,19 @@ std::vector<std::string> champsim::plain_printer::format(O3_CPU::stats_type stat
                               ::print_ratio(std::kilo::num * total_mispredictions, stats.instrs()),
                               ::print_ratio(stats.total_rob_occupancy_at_branch_mispredict, total_mispredictions)));
 
+  // Add stall statistics
+  auto total_stall_cycles = stats.data_stall_cycles + stats.structural_stall_cycles;
+  if (total_stall_cycles > 0) {
+    lines.push_back(fmt::format("{} Total Stall Cycles: {} ({}% of total cycles)", stats.name, total_stall_cycles, 
+                                ::print_ratio(100.0 * static_cast<double>(total_stall_cycles), stats.cycles())));
+    lines.push_back(fmt::format("  Data Stall Cycles: {} ({}% of stall cycles)", stats.data_stall_cycles,
+                                ::print_ratio(100.0 * static_cast<double>(stats.data_stall_cycles), total_stall_cycles)));
+    lines.push_back(fmt::format("  Structural Stall Cycles: {} ({}% of stall cycles)", stats.structural_stall_cycles,
+                                ::print_ratio(100.0 * static_cast<double>(stats.structural_stall_cycles), total_stall_cycles)));
+  } else {
+    lines.push_back(fmt::format("{} Total Stall Cycles: 0", stats.name));
+  }
+
   lines.emplace_back("Branch type MPKI");
   for (auto idx : types) {
     lines.push_back(fmt::format("{}: {}", branch_type_names.at(champsim::to_underlying(idx)),

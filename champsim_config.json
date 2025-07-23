@@ -1,5 +1,5 @@
 {
-  "executable_name": "champsim_mem_lat_far",
+  "executable_name": "champsim_stall_cxl",
   "block_size": 64,
   "page_size": 4096,
   "heartbeat_frequency": 10000000,

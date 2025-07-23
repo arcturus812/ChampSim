@@ -52,6 +52,12 @@ long O3_CPU::operate()
   progress += check_dib();
   initialize_instruction();
 
+  // Track stalls when no progress is made and pipeline is not empty
+  if (!warmup && progress == 0 && (!ROB.empty() || !IFETCH_BUFFER.empty() || 
+                                   !DECODE_BUFFER.empty() || !DISPATCH_BUFFER.empty())) {
+    track_stall_causes();
+  }
+
   // heartbeat
   if (show_heartbeat && (num_retired >= (last_heartbeat_instr + STAT_PRINTING_PERIOD))) {
     using double_duration = std::chrono::duration<double, typename champsim::chrono::picoseconds::period>;
@@ -69,6 +75,51 @@ long O3_CPU::operate()
   }
 
   return progress;
+}
+
+// Add new method to track stall causes. it should be called when no progress is made and pipeline is not empty
+void O3_CPU::track_stall_causes()
+{
+  bool data_stall_detected = false;
+
+  // Check for data stalls - waiting for data from memory hierarchy
+  
+  // Instructions waiting for fetch completion from L1I
+  for (const auto& instr : IFETCH_BUFFER) {
+    if (instr.fetch_issued && !instr.fetch_completed) {
+      data_stall_detected = true;
+      break;
+    }
+  }
+
+  // Loads waiting for data from L1D
+  if (!data_stall_detected) {
+    for (const auto& lq_entry : LQ) {
+      if (lq_entry.has_value() && lq_entry->fetch_issued && 
+          lq_entry->producer_id == std::numeric_limits<uint64_t>::max()) {
+        data_stall_detected = true;
+        break;
+      }
+    }
+  }
+
+  // Instructions waiting for memory operations to complete
+  if (!data_stall_detected) {
+    for (const auto& instr : ROB) {
+      if (instr.executed && !instr.completed && instr.ready_time <= current_time &&
+          instr.completed_mem_ops < instr.num_mem_ops()) {
+        data_stall_detected = true;
+        break;
+      }
+    }
+  }
+
+  if (data_stall_detected) {
+    sim_stats.data_stall_cycles++;
+  } else {
+    // If not data stall but still stalled, it's structural stall
+    sim_stats.structural_stall_cycles++;
+  }
 }
 
 void O3_CPU::initialize()
