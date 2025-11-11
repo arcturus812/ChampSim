@@ -19,24 +19,202 @@
 #include <algorithm>
 #include <cfenv>
 #include <cmath>
+#include <cstdlib>
+#include <functional>
 #include <fmt/core.h>
 
 #include "deadlock.h"
+#include "dramsim3.h"
 #include "instruction.h"
 #include "util/bits.h" // for lg2, bitmask
 #include "util/span.h"
 #include "util/units.h"
 
+struct MEMORY_CONTROLLER::dramsim3_backend {
+  using request_type = MEMORY_CONTROLLER::request_type;
+  using response_type = MEMORY_CONTROLLER::response_type;
+
+  dramsim3_backend(const dramsim3_config& cfg, std::size_t rq_size, std::size_t num_channels);
+
+  bool add_rq(const request_type& packet, champsim::channel* ul, bool warmup_state);
+  bool add_wq(const request_type& packet, bool warmup_state);
+  long operate();
+  void initialize();
+  void begin_phase(bool warmup_state);
+  void end_phase(unsigned cpu);
+  void print_deadlock() const;
+
+private:
+  struct pending_request {
+    response_type payload;
+    std::vector<std::deque<response_type>*> sinks;
+  };
+
+  static uint64_t block_aligned(uint64_t addr);
+  std::vector<std::optional<pending_request>>::iterator find_request(uint64_t block_addr);
+
+  dramsim3_config settings;
+  std::size_t max_outstanding = 0;
+  std::vector<std::optional<pending_request>> outstanding;
+  std::unique_ptr<dramsim3::MemorySystem> memory;
+  bool warmup = true;
+
+  void read_complete(uint64_t addr);
+  void write_complete(uint64_t addr);
+};
+
+MEMORY_CONTROLLER::dramsim3_backend::dramsim3_backend(const dramsim3_config& cfg, std::size_t rq_size, std::size_t num_channels)
+    : settings(cfg), max_outstanding(std::max<std::size_t>(std::size_t{1}, rq_size * std::max<std::size_t>(num_channels, std::size_t{1}))),
+      outstanding(max_outstanding)
+{
+  auto read_cb = std::bind(&dramsim3_backend::read_complete, this, std::placeholders::_1);
+  auto write_cb = std::bind(&dramsim3_backend::write_complete, this, std::placeholders::_1);
+  memory = std::make_unique<dramsim3::MemorySystem>(settings.config_file, settings.output_dir, read_cb, write_cb);
+}
+
+auto MEMORY_CONTROLLER::dramsim3_backend::block_aligned(uint64_t addr) -> uint64_t { return addr >> LOG2_BLOCK_SIZE; }
+
+auto MEMORY_CONTROLLER::dramsim3_backend::find_request(uint64_t block_addr) -> std::vector<std::optional<pending_request>>::iterator
+{
+  return std::find_if(std::begin(outstanding), std::end(outstanding), [block_addr](const auto& entry) {
+    return entry.has_value() && block_aligned(entry->payload.address.template to<uint64_t>()) == block_addr;
+  });
+}
+
+bool MEMORY_CONTROLLER::dramsim3_backend::add_rq(const request_type& packet, champsim::channel* ul, bool warmup_state)
+{
+  if (warmup_state || warmup) {
+    if (ul != nullptr && packet.response_requested) {
+      response_type response{packet.address, packet.v_address, packet.data, packet.pf_metadata, packet.instr_depend_on_me};
+      ul->returned.push_back(response);
+    }
+    return true;
+  }
+
+  auto block_addr = block_aligned(packet.address.template to<uint64_t>());
+
+  if (auto dup = find_request(block_addr); dup != std::end(outstanding)) {
+    if (packet.response_requested && ul != nullptr) {
+      dup->value().sinks.push_back(&ul->returned);
+    }
+    dup->value().payload.instr_depend_on_me.insert(std::end(dup->value().payload.instr_depend_on_me), std::cbegin(packet.instr_depend_on_me),
+                                                   std::cend(packet.instr_depend_on_me));
+    return true;
+  }
+
+  if (!memory->WillAcceptTransaction(packet.address.template to<uint64_t>(), false)) {
+    return false;
+  }
+
+  auto slot = std::find_if(std::begin(outstanding), std::end(outstanding), [](const auto& entry) { return !entry.has_value(); });
+  if (slot == std::end(outstanding)) {
+    return false;
+  }
+
+  pending_request req{response_type{packet.address, packet.v_address, packet.data, packet.pf_metadata, packet.instr_depend_on_me}, {}};
+  if (packet.response_requested && ul != nullptr) {
+    req.sinks.push_back(&ul->returned);
+  }
+  slot->emplace(std::move(req));
+
+  if (!memory->AddTransaction(packet.address.template to<uint64_t>(), false)) {
+    slot->reset();
+    return false;
+  }
+
+  return true;
+}
+
+bool MEMORY_CONTROLLER::dramsim3_backend::add_wq(const request_type& packet, bool warmup_state)
+{
+  if (warmup_state || warmup) {
+    return true;
+  }
+
+  if (!memory->WillAcceptTransaction(packet.address.template to<uint64_t>(), true)) {
+    return false;
+  }
+
+  return memory->AddTransaction(packet.address.template to<uint64_t>(), true);
+}
+
+long MEMORY_CONTROLLER::dramsim3_backend::operate()
+{
+  if (memory) {
+    memory->ClockTick();
+    return 1;
+  }
+  return 0;
+}
+
+void MEMORY_CONTROLLER::dramsim3_backend::initialize()
+{
+  if (memory) {
+    memory->ResetStats();
+  }
+}
+
+void MEMORY_CONTROLLER::dramsim3_backend::begin_phase(bool warmup_state)
+{
+  warmup = warmup_state;
+  std::fill(std::begin(outstanding), std::end(outstanding), std::nullopt);
+  if (!warmup_state && memory) {
+    memory->ResetStats();
+  }
+}
+
+void MEMORY_CONTROLLER::dramsim3_backend::end_phase(unsigned /*cpu*/)
+{
+  if (memory) {
+    memory->PrintStats();
+  }
+}
+
+void MEMORY_CONTROLLER::dramsim3_backend::print_deadlock() const
+{
+  auto pending = std::count_if(std::begin(outstanding), std::end(outstanding), [](const auto& entry) { return entry.has_value(); });
+  fmt::print("DRAMSim3 pending requests: {}\n", pending);
+  for (const auto& entry : outstanding) {
+    if (entry.has_value()) {
+      fmt::print("  Address: 0x{:x} sinks: {}\n", entry->payload.address.template to<uint64_t>(), entry->sinks.size());
+    }
+  }
+}
+
+void MEMORY_CONTROLLER::dramsim3_backend::read_complete(uint64_t addr)
+{
+  auto block_addr = block_aligned(addr);
+  if (auto it = find_request(block_addr); it != std::end(outstanding)) {
+    for (auto* sink : it->value().sinks) {
+      if (sink != nullptr) {
+        sink->push_back(it->value().payload);
+      }
+    }
+    it->reset();
+  } else {
+    fmt::print("[PANIC] DRAMSim3 completion for unknown address 0x{:x}\n", addr);
+    std::abort();
+  }
+}
+
+void MEMORY_CONTROLLER::dramsim3_backend::write_complete(uint64_t /*addr*/) {}
+
 MEMORY_CONTROLLER::MEMORY_CONTROLLER(champsim::chrono::picoseconds dbus_period, champsim::chrono::picoseconds mc_period, std::size_t t_rp, std::size_t t_rcd,
                                      std::size_t t_cas, std::size_t t_ras, champsim::chrono::microseconds refresh_period, std::vector<channel_type*>&& ul,
                                      std::size_t rq_size, std::size_t wq_size, std::size_t chans, champsim::data::bytes chan_width, std::size_t rows,
-                                     std::size_t columns, std::size_t ranks, std::size_t bankgroups, std::size_t banks, std::size_t refreshes_per_period)
+                                     std::size_t columns, std::size_t ranks, std::size_t bankgroups, std::size_t banks, std::size_t refreshes_per_period,
+                                     dramsim3_config dramsim3_cfg)
     : champsim::operable(mc_period), queues(std::move(ul)), channel_width(chan_width),
-      address_mapping(chan_width, BLOCK_SIZE / chan_width.count(), chans, bankgroups, banks, columns, ranks, rows), data_bus_period(dbus_period)
+      address_mapping(chan_width, BLOCK_SIZE / chan_width.count(), chans, bankgroups, banks, columns, ranks, rows), data_bus_period(dbus_period),
+      dramsim3_settings(std::move(dramsim3_cfg))
 {
-  for (std::size_t i{0}; i < chans; ++i) {
-    channels.emplace_back(dbus_period, mc_period, t_rp, t_rcd, t_cas, t_ras, refresh_period, refreshes_per_period, chan_width, rq_size, wq_size,
-                          address_mapping);
+  if (!dramsim3_settings.enabled) {
+    for (std::size_t i{0}; i < chans; ++i) {
+      channels.emplace_back(dbus_period, mc_period, t_rp, t_rcd, t_cas, t_ras, refresh_period, refreshes_per_period, chan_width, rq_size, wq_size,
+                            address_mapping);
+    }
+  } else {
+    dramsim3 = std::make_shared<dramsim3_backend>(dramsim3_settings, rq_size, chans);
   }
 }
 
@@ -97,8 +275,12 @@ long MEMORY_CONTROLLER::operate()
 
   initiate_requests();
 
-  for (auto& channel : channels) {
-    progress += channel._operate();
+  if (dramsim3) {
+    progress += dramsim3->operate();
+  } else {
+    for (auto& channel : channels) {
+      progress += channel._operate();
+    }
   }
 
   return progress;
@@ -381,6 +563,10 @@ void MEMORY_CONTROLLER::initialize()
   }
   fmt::print(" Channels: {} Width: {}-bit Data Rate: {} MT/s\n", std::size(channels), champsim::data::bits_per_byte * channel_width.count(),
              1us / (data_bus_period));
+
+  if (dramsim3) {
+    dramsim3->initialize();
+  }
 }
 
 void DRAM_CHANNEL::initialize() {}
@@ -401,6 +587,10 @@ void MEMORY_CONTROLLER::begin_phase()
     ul->roi_stats = ul_new_roi_stats;
     ul->sim_stats = ul_new_sim_stats;
   }
+
+  if (dramsim3) {
+    dramsim3->begin_phase(warmup);
+  }
 }
 
 void DRAM_CHANNEL::begin_phase() {}
@@ -409,6 +599,10 @@ void MEMORY_CONTROLLER::end_phase(unsigned cpu)
 {
   for (auto& chan : channels) {
     chan.end_phase(cpu);
+  }
+
+  if (dramsim3) {
+    dramsim3->end_phase(cpu);
   }
 }
 
@@ -516,6 +710,10 @@ DRAM_CHANNEL::request_type::request_type(const typename champsim::channel::reque
 
 bool MEMORY_CONTROLLER::add_rq(const request_type& packet, champsim::channel* ul)
 {
+  if (dramsim3) {
+    return dramsim3->add_rq(packet, ul, warmup);
+  }
+
   auto& channel = channels[address_mapping.get_channel(packet.address)];
 
   if (auto rq_it = std::find_if_not(std::begin(channel.RQ), std::end(channel.RQ), [this](const auto& pkt) { return pkt.has_value(); });
@@ -535,6 +733,10 @@ bool MEMORY_CONTROLLER::add_rq(const request_type& packet, champsim::channel* ul
 
 bool MEMORY_CONTROLLER::add_wq(const request_type& packet)
 {
+  if (dramsim3) {
+    return dramsim3->add_wq(packet, warmup);
+  }
+
   auto& channel = channels[address_mapping.get_channel(packet.address)];
 
   // search for the empty index
@@ -615,6 +817,11 @@ std::size_t DRAM_CHANNEL::bankgroup_request_capacity() const { return std::size(
 // LCOV_EXCL_START Exclude the following function from LCOV
 void MEMORY_CONTROLLER::print_deadlock()
 {
+  if (dramsim3) {
+    dramsim3->print_deadlock();
+    return;
+  }
+
   int j = 0;
   for (auto& chan : channels) {
     fmt::print("DRAM Channel {}\n", j++);
@@ -633,3 +840,5 @@ void DRAM_CHANNEL::print_deadlock()
   champsim::range_print_deadlock(WQ, "WQ", q_writer, q_entry_pack);
 }
 // LCOV_EXCL_STOP
+
+MEMORY_CONTROLLER::~MEMORY_CONTROLLER() = default;

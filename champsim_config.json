@@ -175,7 +175,10 @@
     "tRP": 24,
     "tRAS": 52,
     "refresh_period": 32,
-    "refreshes_per_period": 8192
+    "refreshes_per_period": 8192,
+    "backend": "dramsim3",
+    "dramsim3_config": "DRAMsim3/configs/DDR4_8Gb_x8_2400.ini",
+    "dramsim3_output_dir": "dramsim3-output"
   },
 
   "virtual_memory": {

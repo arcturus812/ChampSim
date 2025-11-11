@@ -17,8 +17,11 @@ override REPLACEMENT_ROOT += $(addsuffix /replacement,$(MODULE_ROOT))
 # vcpkg integration
 TRIPLET_DIR = $(patsubst %/,%,$(firstword $(filter-out $(ROOT_DIR)/vcpkg_installed/vcpkg/, $(wildcard $(ROOT_DIR)/vcpkg_installed/*/))))
 override CPPFLAGS += -I$(OBJ_ROOT)
+override CPPFLAGS += -I$(ROOT_DIR)
 override LDFLAGS  += -L$(TRIPLET_DIR)/lib -L$(TRIPLET_DIR)/lib/manual-link
 override LDLIBS   += -lCLI11 -llzma -lz -lbz2 -lfmt
+override LDFLAGS  += -L$(ROOT_DIR)/DRAMsim3 -Wl,-rpath,$(ROOT_DIR)/DRAMsim3
+override LDLIBS   += -ldramsim3
 
 .PHONY: all clean compile_commands compile_commands_clean configclean test pytest maketest
 

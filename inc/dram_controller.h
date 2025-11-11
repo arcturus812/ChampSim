@@ -24,8 +24,10 @@
 #include <deque>    // for deque
 #include <iterator> // for end
 #include <limits>
+#include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include "address.h"
 #include "channel.h"
@@ -186,6 +188,15 @@ struct DRAM_CHANNEL final : public champsim::operable {
   [[nodiscard]] champsim::data::bytes density() const;
 };
 
+struct memory_controller_dramsim3_config {
+  bool enabled = false;
+  std::string config_file{};
+  std::string output_dir{};
+
+  memory_controller_dramsim3_config() = default;
+  memory_controller_dramsim3_config(bool en, std::string cfg, std::string out) : enabled(en), config_file(std::move(cfg)), output_dir(std::move(out)) {}
+};
+
 class MEMORY_CONTROLLER : public champsim::operable
 {
   using channel_type = champsim::channel;
@@ -204,12 +215,16 @@ class MEMORY_CONTROLLER : public champsim::operable
   champsim::chrono::picoseconds data_bus_period{};
 
 public:
+  using dramsim3_config = memory_controller_dramsim3_config;
+
   std::vector<DRAM_CHANNEL> channels;
+  struct dramsim3_backend;
 
   MEMORY_CONTROLLER(champsim::chrono::picoseconds dbus_period, champsim::chrono::picoseconds mc_period, std::size_t t_rp, std::size_t t_rcd, std::size_t t_cas,
                     std::size_t t_ras, champsim::chrono::microseconds refresh_period, std::vector<channel_type*>&& ul, std::size_t rq_size, std::size_t wq_size,
                     std::size_t chans, champsim::data::bytes chan_width, std::size_t rows, std::size_t columns, std::size_t ranks, std::size_t bankgroups,
-                    std::size_t banks, std::size_t refreshes_per_period);
+                    std::size_t banks, std::size_t refreshes_per_period, dramsim3_config dramsim3_cfg = {});
+  ~MEMORY_CONTROLLER() override;
 
   void initialize() final;
   long operate() final;
@@ -218,6 +233,10 @@ public:
   void print_deadlock() final;
 
   [[nodiscard]] champsim::data::bytes size() const;
+
+private:
+  dramsim3_config dramsim3_settings;
+  std::shared_ptr<dramsim3_backend> dramsim3;
 };
 
 #endif

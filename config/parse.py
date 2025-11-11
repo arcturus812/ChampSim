@@ -17,6 +17,7 @@ import functools
 import operator
 import os
 import math
+import json
 from collections import deque
 
 from . import defaults
@@ -331,9 +332,21 @@ class NormalizedConfiguration:
         pmem = util.chain(self.pmem, {
             'name': 'DRAM', 'data_rate': 3200, 'frequency': 1600, 'channels': 1, 'ranks': 1, 'bankgroups': 8, 'banks': 4, 'bank_rows': 65536, 'bank_columns': 1024,
             'channel_width': 8, 'wq_size': 64, 'rq_size': 64, 'tRP': 24, 'tRCD': 24, 'tCAS': 24, 'tRAS' : 52,
-            'refresh_period': 32, 'refreshes_per_period': 8192
+            'refresh_period': 32, 'refreshes_per_period': 8192,
+            'backend': 'native',
+            'dramsim3_config': 'DRAMsim3/configs/DDR4_8Gb_x8_2400.ini',
+            'dramsim3_output_dir': 'dramsim3-output'
         })
         pmem = util.chain(pmem,(do_deprecation(pmem, pmem_deprecation_keys,pmem_deprecation_warnings)))
+
+        backend_name = str(pmem.get('backend', 'native')).lower()
+        dramsim3_enabled = backend_name == 'dramsim3'
+        pmem['_dramsim3_enabled'] = 'true' if dramsim3_enabled else 'false'
+        pmem['_dramsim3_config_literal'] = f'std::string{{{json.dumps(pmem.get("dramsim3_config", ""))}}}'
+        pmem['_dramsim3_output_literal'] = f'std::string{{{json.dumps(pmem.get("dramsim3_output_dir", ""))}}}'
+        pmem['_dramsim3_ctor'] = (
+            f'MEMORY_CONTROLLER::dramsim3_config{{{pmem["_dramsim3_enabled"]}, {pmem["_dramsim3_config_literal"]}, {pmem["_dramsim3_output_literal"]}}}'
+        )
         
         #convert vmem boolean to string
         vmem = util.chain(
