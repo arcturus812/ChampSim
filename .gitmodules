@@ -1,3 +1,6 @@
 [submodule "vcpkg"]
 	path = vcpkg
 	url = https://github.com/Microsoft/vcpkg.git
+[submodule "DRAMsim3"]
+	path = DRAMsim3
+	url = https://github.com/umd-memsys/DRAMsim3.git
