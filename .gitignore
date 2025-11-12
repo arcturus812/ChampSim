@@ -30,3 +30,5 @@ compile_commands.json
 
 .vscode/
 **/.DS_Store
+dramsim3-output/dramsim3epoch.json dramsim3-output/dramsim3.json dramsim3-output/dramsim3.txt
+dramsim3-output-slow/dramsim3epoch.json dramsim3-output-slow/dramsim3.json dramsim3-output-slow/dramsim3.txt

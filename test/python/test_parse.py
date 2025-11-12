@@ -407,6 +407,59 @@ class NormalizeConfigTest(unittest.TestCase):
         result = config.parse.NormalizedConfiguration(test_config)
         self.assertEqual(result.pmem.get('__test__'), True)
 
+    def test_physical_memory_layers_are_recorded(self):
+        test_config = {
+                'physical_memory': [
+                    {'name': 'fast', 'frequency': 3200},
+                    {'name': 'slow', 'frequency': 2400}
+                ]
+            }
+        result = config.parse.NormalizedConfiguration(test_config)
+        self.assertEqual(len(result.pmem_layers), 2)
+
+    def test_more_than_two_memory_layers_raises(self):
+        test_config = {
+                'physical_memory': [{}, {}, {}]
+            }
+        with self.assertRaises(ValueError):
+            config.parse.NormalizedConfiguration(test_config)
+
+    def test_dramsim3_ini_overrides_base_geometry(self):
+        test_config = {
+            'physical_memory': {
+                'backend': 'dramsim3',
+                'bank_rows': 4,
+                'layers': [
+                    {
+                        'name': 'layer0',
+                        'dramsim3_config': 'DRAMsim3/configs/DDR4_8Gb_x8_2400.ini'
+                    }
+                ]
+            }
+        }
+        _, elements, _, _, _ = config.parse.parse_config(test_config)
+        pmem = elements['pmems'][0]
+        self.assertEqual(pmem['bank_rows'], 65536)
+        self.assertEqual(pmem['banks'], 4)
+        self.assertEqual(pmem['channel_width'], 8)
+
+    def test_explicit_layer_geometry_is_preserved(self):
+        test_config = {
+            'physical_memory': {
+                'backend': 'dramsim3',
+                'layers': [
+                    {
+                        'name': 'layer0',
+                        'dramsim3_config': 'DRAMsim3/configs/DDR4_8Gb_x8_2400.ini',
+                        'bank_rows': 1024
+                    }
+                ]
+            }
+        }
+        _, elements, _, _, _ = config.parse.parse_config(test_config)
+        pmem = elements['pmems'][0]
+        self.assertEqual(pmem['bank_rows'], 1024)
+
     def test_virtual_memory_is_forwarded(self):
         test_config = {
                 'virtual_memory': {

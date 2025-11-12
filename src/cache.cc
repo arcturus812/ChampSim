@@ -36,6 +36,7 @@ CACHE::CACHE(CACHE&& other)
     : operable(other),
 
       upper_levels(std::move(other.upper_levels)), lower_level(std::move(other.lower_level)), lower_translate(std::move(other.lower_translate)),
+      secondary_lower_levels(std::move(other.secondary_lower_levels)), physical_memory_boundary(other.physical_memory_boundary),
 
       cpu(other.cpu), NAME(std::move(other.NAME)), NUM_SET(other.NUM_SET), NUM_WAY(other.NUM_WAY), MSHR_SIZE(other.MSHR_SIZE), PQ_SIZE(other.PQ_SIZE),
       HIT_LATENCY(other.HIT_LATENCY), FILL_LATENCY(other.FILL_LATENCY), OFFSET_BITS(other.OFFSET_BITS), block(std::move(other.block)), MAX_TAG(other.MAX_TAG),
@@ -59,6 +60,8 @@ auto CACHE::operator=(CACHE&& other) -> CACHE&
   this->upper_levels = std::move(other.upper_levels);
   this->lower_level = std::move(other.lower_level);
   this->lower_translate = std::move(other.lower_translate);
+  this->secondary_lower_levels = std::move(other.secondary_lower_levels);
+  this->physical_memory_boundary = other.physical_memory_boundary;
 
   this->cpu = other.cpu;
   this->NAME = std::move(other.NAME);
@@ -159,6 +162,20 @@ auto CACHE::matches_address(champsim::address addr) const
   };
 }
 
+auto CACHE::select_lower_level(champsim::address address) const -> channel_type*
+{
+  if (secondary_lower_levels.empty() || lower_level == nullptr) {
+    return lower_level;
+  }
+
+  const auto physical = address.to<uint64_t>();
+  if (physical < physical_memory_boundary) {
+    return lower_level;
+  }
+
+  return secondary_lower_levels.front();
+}
+
 template <typename T>
 champsim::address CACHE::module_address(const T& element) const
 {
@@ -206,7 +223,8 @@ bool CACHE::handle_fill(const mshr_type& fill_mshr)
                  fill_mshr.data_promise->pf_metadata);
     }
 
-    auto success = lower_level->add_wq(writeback_packet);
+    auto* destination = select_lower_level(writeback_packet.address);
+    auto success = destination->add_wq(writeback_packet);
     if (!success) {
       return false;
     }
@@ -354,7 +372,8 @@ bool CACHE::handle_miss(const tag_lookup_type& handle_pkt)
     }
 
     const bool send_to_rq = (prefetch_as_load || handle_pkt.type != access_type::PREFETCH);
-    bool success = send_to_rq ? lower_level->add_rq(mshr_pkt.second) : lower_level->add_pq(mshr_pkt.second);
+    auto* destination = select_lower_level(mshr_pkt.second.address);
+    bool success = send_to_rq ? destination->add_rq(mshr_pkt.second) : destination->add_pq(mshr_pkt.second);
 
     if (!success) {
       return false;
@@ -428,9 +447,18 @@ long CACHE::operate()
   }
 
   // Finish returns
-  std::for_each(std::cbegin(lower_level->returned), std::cend(lower_level->returned), [this](const auto& pkt) { this->finish_packet(pkt); });
-  progress += std::distance(std::cbegin(lower_level->returned), std::cend(lower_level->returned));
-  lower_level->returned.clear();
+  auto drain_returns = [this, &progress](channel_type* level) {
+    if (level == nullptr) {
+      return;
+    }
+    std::for_each(std::cbegin(level->returned), std::cend(level->returned), [this](const auto& pkt) { this->finish_packet(pkt); });
+    progress += std::distance(std::cbegin(level->returned), std::cend(level->returned));
+    level->returned.clear();
+  };
+  drain_returns(lower_level);
+  for (auto* ll : secondary_lower_levels) {
+    drain_returns(ll);
+  }
 
   // Finish translations
   if (lower_translate != nullptr) {

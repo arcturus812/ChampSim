@@ -18,6 +18,8 @@ import operator
 import os
 import math
 import json
+import configparser
+from pathlib import Path
 from collections import deque
 
 from . import defaults
@@ -44,6 +46,121 @@ pmem_deprecation_keys = {
 pmem_deprecation_warnings = {
     'columns': 'Set "bank_columns" to "columns" * 8'
 }
+
+CHAMPSIM_ROOT = Path(__file__).resolve().parent.parent
+_DRAMSIM3_CONFIG_CACHE = {}
+
+
+def _maybe_int(value):
+    if value is None:
+        return None
+    try:
+        return int(value, 0)
+    except ValueError:
+        return int(float(value))
+
+
+def _maybe_float(value):
+    if value is None:
+        return None
+    return float(value)
+
+
+def dramsim3_defaults_from_ini(config_path):
+    '''
+    Read geometry and timing defaults from a DRAMsim3 configuration file.
+    '''
+    resolved_path = Path(config_path)
+    if not resolved_path.is_absolute():
+        resolved_path = CHAMPSIM_ROOT / resolved_path
+    resolved_path = resolved_path.resolve()
+
+    if resolved_path in _DRAMSIM3_CONFIG_CACHE:
+        return dict(_DRAMSIM3_CONFIG_CACHE[resolved_path])
+
+    parser = configparser.ConfigParser()
+    parser.optionxform = str
+    if not parser.read(resolved_path):
+        raise FileNotFoundError(f'Unable to read DRAMsim3 config at {resolved_path}')
+
+    def get_value(section, option, cast_func=_maybe_int):
+        if not parser.has_option(section, option):
+            return None
+        raw_value = parser.get(section, option).strip()
+        if raw_value == '':
+            return None
+        if cast_func is None:
+            return raw_value
+        return cast_func(raw_value)
+
+    defaults = {}
+    defaults['bankgroups'] = get_value('dram_structure', 'bankgroups')
+    defaults['banks'] = get_value('dram_structure', 'banks_per_group') or get_value('dram_structure', 'banks')
+    defaults['bank_rows'] = get_value('dram_structure', 'rows')
+    defaults['bank_columns'] = get_value('dram_structure', 'columns')
+
+    channels = get_value('system', 'channels')
+    if channels is not None:
+        defaults['channels'] = channels
+
+    bus_width_bits = get_value('system', 'bus_width')
+    if bus_width_bits is not None:
+        defaults['channel_width'] = max(1, bus_width_bits // 8)
+
+    t_ck = get_value('timing', 'tCK', cast_func=_maybe_float)
+    if t_ck and t_ck > 0:
+        data_rate = max(1, int(round(2000.0 / t_ck)))
+        defaults['data_rate'] = data_rate
+        defaults['frequency'] = max(1, data_rate // 2)
+
+    defaults['tRCD'] = get_value('timing', 'tRCD')
+    defaults['tRP'] = get_value('timing', 'tRP')
+    defaults['tRAS'] = get_value('timing', 'tRAS')
+    defaults['tCAS'] = get_value('timing', 'CL') or get_value('timing', 'tCAS')
+
+    t_refi = get_value('timing', 'tREFI', cast_func=_maybe_float)
+    if t_refi and t_refi > 0:
+        defaults['refresh_period'] = max(1, int(round(t_refi / 1000.0)))
+
+    _DRAMSIM3_CONFIG_CACHE[resolved_path] = {k: v for k, v in defaults.items() if v is not None}
+    return dict(_DRAMSIM3_CONFIG_CACHE[resolved_path])
+
+
+def normalize_physical_memory(pmem_config):
+    '''
+    Normalize the physical memory description into a list of layer dictionaries.
+
+    The input may be a dictionary (the legacy format) or a list of dictionaries (the new layered format).
+    When the legacy dictionary includes a "layers" key, that list is treated as overrides on top of the
+    dictionary-level defaults.
+    '''
+
+    def annotate(layer_dict, inherited=None):
+        explicit_keys = set(layer_dict.keys())
+        combined = util.chain(layer_dict, inherited or {})
+        combined['_explicit_layer_keys'] = explicit_keys
+        return combined
+
+    if isinstance(pmem_config, list):
+        layers = [annotate(layer) for layer in pmem_config]
+    elif isinstance(pmem_config, dict):
+        layer_overrides = pmem_config.get('layers')
+        base = {k: v for k, v in pmem_config.items() if k != 'layers'}
+        if isinstance(layer_overrides, list) and layer_overrides:
+            layers = [annotate(layer, base) for layer in layer_overrides]
+        else:
+            combined = dict(base)
+            combined['_explicit_layer_keys'] = set(base.keys())
+            layers = [combined]
+    else:
+        layers = [{}]
+        layers[0]['_explicit_layer_keys'] = set()
+
+    if not layers:
+        layers = [{}]
+        layers[0]['_explicit_layer_keys'] = set()
+
+    return layers
 
 def executable_name(*config_list):
     ''' Produce the executable name from a list of configurations '''
@@ -276,17 +393,23 @@ class NormalizedConfiguration:
         # The name 'DRAM' is reserved for the physical memory
         self.caches = {k:v for k,v in self.caches.items() if k != 'DRAM'}
 
-        self.pmem = config_file.get('physical_memory', {})
-        
-        #this allows frequency to be specified instead of data rate or vice-versa for DRAM
-        if('frequency' in self.pmem.keys()):
-            self.pmem['data_rate'] = self.pmem['frequency']
-            self.pmem['frequency'] = self.pmem['frequency']/2
-        elif('data_rate' in self.pmem.keys()):
-            self.pmem['frequency'] = self.pmem['data_rate']/2
+        self.pmem_layers = normalize_physical_memory(config_file.get('physical_memory', {}))
+
+        if len(self.pmem_layers) > 2:
+            raise ValueError('physical_memory supports at most two layers')
+
+        for layer in self.pmem_layers:
+            # this allows frequency to be specified instead of data rate or vice-versa for DRAM
+            if 'frequency' in layer:
+                layer['data_rate'] = layer['frequency']
+                layer['frequency'] = layer['frequency']/2
+            elif 'data_rate' in layer:
+                layer['frequency'] = layer['data_rate']/2
+
+        self.pmem = self.pmem_layers[0]
 
         if verbose:
-            print('P: pmem', list(self.pmem.keys()))
+            print('P: pmem', [list(layer.keys()) for layer in self.pmem_layers])
 
         self.vmem = config_file.get('virtual_memory', {})
 
@@ -302,7 +425,11 @@ class NormalizedConfiguration:
         self.cores = list(itertools.starmap(util.chain, itertools.zip_longest(self.cores, rhs.cores, fillvalue={})))
         self.caches = util.chain(self.caches, rhs.caches)
         self.ptws = util.chain(self.ptws, rhs.ptws)
-        self.pmem = util.chain(self.pmem, rhs.pmem)
+        self.pmem_layers = [
+            util.chain(lhs_layer, rhs_layer)
+            for lhs_layer, rhs_layer in itertools.zip_longest(self.pmem_layers, rhs.pmem_layers, fillvalue={})
+        ]
+        self.pmem = self.pmem_layers[0]
         self.vmem = util.chain(self.vmem, rhs.vmem)
         self.root = util.chain(self.root, rhs.root)
 
@@ -329,24 +456,46 @@ class NormalizedConfiguration:
             }
         )
 
-        pmem = util.chain(self.pmem, {
-            'name': 'DRAM', 'data_rate': 3200, 'frequency': 1600, 'channels': 1, 'ranks': 1, 'bankgroups': 8, 'banks': 4, 'bank_rows': 65536, 'bank_columns': 1024,
-            'channel_width': 8, 'wq_size': 64, 'rq_size': 64, 'tRP': 24, 'tRCD': 24, 'tCAS': 24, 'tRAS' : 52,
-            'refresh_period': 32, 'refreshes_per_period': 8192,
-            'backend': 'native',
-            'dramsim3_config': 'DRAMsim3/configs/DDR4_8Gb_x8_2400.ini',
-            'dramsim3_output_dir': 'dramsim3-output'
-        })
-        pmem = util.chain(pmem,(do_deprecation(pmem, pmem_deprecation_keys,pmem_deprecation_warnings)))
+        def default_pmem_name(index):
+            if index == 0:
+                return 'DRAM'
+            if index == 1:
+                return 'DRAM_SLOW'
+            return f'DRAM_LAYER{index}'
 
-        backend_name = str(pmem.get('backend', 'native')).lower()
-        dramsim3_enabled = backend_name == 'dramsim3'
-        pmem['_dramsim3_enabled'] = 'true' if dramsim3_enabled else 'false'
-        pmem['_dramsim3_config_literal'] = f'std::string{{{json.dumps(pmem.get("dramsim3_config", ""))}}}'
-        pmem['_dramsim3_output_literal'] = f'std::string{{{json.dumps(pmem.get("dramsim3_output_dir", ""))}}}'
-        pmem['_dramsim3_ctor'] = (
-            f'MEMORY_CONTROLLER::dramsim3_config{{{pmem["_dramsim3_enabled"]}, {pmem["_dramsim3_config_literal"]}, {pmem["_dramsim3_output_literal"]}}}'
-        )
+        pmems = []
+        for idx, layer in enumerate(self.pmem_layers):
+            explicit_keys = set(layer.pop('_explicit_layer_keys', ()))
+            ini_defaults = {}
+            backend_name_entry = str(layer.get('backend', layer.get('name', 'native'))).lower()
+            config_path = layer.get('dramsim3_config')
+            if backend_name_entry == 'dramsim3' and config_path:
+                try:
+                    ini_defaults = dramsim3_defaults_from_ini(config_path)
+                except FileNotFoundError as err:
+                    if verbose:
+                        print(f'WARNING: {err}')
+            for key, value in ini_defaults.items():
+                if key not in explicit_keys:
+                    layer[key] = value
+
+            pmem_default = {
+                'name': default_pmem_name(idx), 'data_rate': 3200, 'frequency': 1600, 'channels': 1, 'ranks': 1, 'bankgroups': 8, 'banks': 4, 'bank_rows': 65536,
+                'bank_columns': 1024, 'channel_width': 8, 'wq_size': 64, 'rq_size': 64, 'tRP': 24, 'tRCD': 24, 'tCAS': 24, 'tRAS': 52, 'refresh_period': 32,
+                'refreshes_per_period': 8192, 'backend': 'native', 'dramsim3_config': 'DRAMsim3/configs/DDR4_8Gb_x8_2400.ini', 'dramsim3_output_dir': 'dramsim3-output'
+            }
+            pmem = util.chain(layer, pmem_default)
+            pmem = util.chain(pmem, do_deprecation(pmem, pmem_deprecation_keys, pmem_deprecation_warnings))
+
+            backend_name = str(pmem.get('backend', 'native')).lower()
+            dramsim3_enabled = backend_name == 'dramsim3'
+            pmem['_dramsim3_enabled'] = 'true' if dramsim3_enabled else 'false'
+            pmem['_dramsim3_config_literal'] = f'std::string{{{json.dumps(pmem.get("dramsim3_config", ""))}}}'
+            pmem['_dramsim3_output_literal'] = f'std::string{{{json.dumps(pmem.get("dramsim3_output_dir", ""))}}}'
+            pmem['_dramsim3_ctor'] = (
+                f'MEMORY_CONTROLLER::dramsim3_config{{{pmem["_dramsim3_enabled"]}, {pmem["_dramsim3_config_literal"]}, {pmem["_dramsim3_output_literal"]}}}'
+            )
+            pmems.append(pmem)
         
         #convert vmem boolean to string
         vmem = util.chain(
@@ -442,11 +591,18 @@ class NormalizedConfiguration:
             ).values()
         )
 
+        if len(pmems) > 1:
+            primary_pmem_name = pmems[0]['name']
+            extra_lower_names = [pmem['name'] for pmem in pmems[1:]]
+            for cache in caches.values():
+                if cache.get('lower_level') == primary_pmem_name:
+                    cache['_additional_lower_levels'] = extra_lower_names
+
         elements = {
             'cores': cores,
             'caches': tuple(caches.values()),
             'ptws': tuple(ptws.values()),
-            'pmem': pmem,
+            'pmems': tuple(pmems),
             'vmem': vmem
         }
         module_info = {

@@ -62,6 +62,8 @@ struct cache_builder_base {
   std::vector<champsim::channel*> m_uls{};
   champsim::channel* m_ll{};
   champsim::channel* m_lt{nullptr};
+  std::vector<champsim::channel*> m_ll_extras{};
+  std::optional<uint64_t> m_physical_boundary{};
 };
 } // namespace detail
 
@@ -227,6 +229,8 @@ public:
    * Specify the lower level of the cache.
    */
   self_type& lower_level(champsim::channel* ll_);
+  self_type& additional_lower_level(champsim::channel* ll_);
+  self_type& physical_memory_boundary(uint64_t boundary_);
 
   /**
    * Specify the translator (TLB) for this cache.
@@ -504,6 +508,20 @@ template <typename P, typename R>
 auto champsim::cache_builder<P, R>::lower_level(champsim::channel* ll_) -> self_type&
 {
   m_ll = ll_;
+  return *this;
+}
+
+template <typename P, typename R>
+auto champsim::cache_builder<P, R>::additional_lower_level(champsim::channel* ll_) -> self_type&
+{
+  m_ll_extras.push_back(ll_);
+  return *this;
+}
+
+template <typename P, typename R>
+auto champsim::cache_builder<P, R>::physical_memory_boundary(uint64_t boundary_) -> self_type&
+{
+  m_physical_boundary = boundary_;
   return *this;
 }
 

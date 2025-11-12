@@ -38,6 +38,7 @@ private:
   std::map<std::tuple<uint32_t, uint32_t, champsim::address_slice<champsim::dynamic_extent>>, champsim::address> page_table;
   std::optional<uint64_t> randomization_seed;
   MEMORY_CONTROLLER& dram;
+  const champsim::data::bytes physical_capacity;
 
 public:
   const champsim::chrono::clock::duration minor_fault_penalty;
@@ -71,9 +72,10 @@ public:
    *   Future versions may perform major page faults through this reference.
    */
   VirtualMemory(champsim::data::bytes page_table_page_size, std::size_t page_table_levels, champsim::chrono::clock::duration minor_penalty,
-                MEMORY_CONTROLLER& dram_);
+                MEMORY_CONTROLLER& dram_, std::optional<champsim::data::bytes> physical_capacity_override = std::nullopt);
   VirtualMemory(champsim::data::bytes page_table_page_size, std::size_t page_table_levels, champsim::chrono::clock::duration minor_penalty,
-                MEMORY_CONTROLLER& dram_, std::optional<uint64_t> randomization_seed_);
+                MEMORY_CONTROLLER& dram_, std::optional<uint64_t> randomization_seed_,
+                std::optional<champsim::data::bytes> physical_capacity_override = std::nullopt);
 
   /**
    * Find the bit location of the lowest bit for the given page table level.

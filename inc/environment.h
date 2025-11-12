@@ -32,7 +32,8 @@ struct environment {
   virtual std::vector<std::reference_wrapper<O3_CPU>> cpu_view() = 0;
   virtual std::vector<std::reference_wrapper<CACHE>> cache_view() = 0;
   virtual std::vector<std::reference_wrapper<PageTableWalker>> ptw_view() = 0;
-  virtual MEMORY_CONTROLLER& dram_view() = 0;
+  virtual std::vector<std::reference_wrapper<MEMORY_CONTROLLER>> dram_view() = 0;
+  virtual uint64_t physical_memory_boundary() const = 0;
   virtual std::vector<std::reference_wrapper<operable>> operable_view() = 0;
 };
 

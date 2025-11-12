@@ -26,8 +26,10 @@
 using namespace champsim::data::data_literals;
 
 VirtualMemory::VirtualMemory(champsim::data::bytes page_table_page_size, std::size_t page_table_levels, champsim::chrono::clock::duration minor_penalty,
-                             MEMORY_CONTROLLER& dram_, std::optional<uint64_t> randomization_seed_)
-    : randomization_seed(randomization_seed_), dram(dram_), minor_fault_penalty(minor_penalty), pt_levels(page_table_levels),
+                             MEMORY_CONTROLLER& dram_, std::optional<uint64_t> randomization_seed_,
+                             std::optional<champsim::data::bytes> physical_capacity_override)
+    : randomization_seed(randomization_seed_), dram(dram_), physical_capacity(physical_capacity_override.value_or(dram_.size())),
+      minor_fault_penalty(minor_penalty), pt_levels(page_table_levels),
       pte_page_size(page_table_page_size),
       next_pte_page(
           champsim::dynamic_extent{champsim::data::bits{LOG2_PAGE_SIZE}, champsim::data::bits{champsim::lg2(champsim::data::bytes{pte_page_size}.count())}}, 0)
@@ -41,7 +43,7 @@ VirtualMemory::VirtualMemory(champsim::data::bytes page_table_page_size, std::si
   if (required_bits > champsim::address::bits) {
     fmt::print("[VMEM] WARNING: virtual memory configuration would require {} bits of addressing.\n", required_bits); // LCOV_EXCL_LINE
   }
-  if (required_bits > champsim::data::bits{champsim::lg2(dram.size().count())}) {
+  if (required_bits > champsim::data::bits{champsim::lg2(physical_capacity.count())}) {
     fmt::print("[VMEM] WARNING: physical memory size is smaller than virtual memory size.\n"); // LCOV_EXCL_LINE
   }
   populate_pages();
@@ -49,15 +51,15 @@ VirtualMemory::VirtualMemory(champsim::data::bytes page_table_page_size, std::si
 }
 
 VirtualMemory::VirtualMemory(champsim::data::bytes page_table_page_size, std::size_t page_table_levels, champsim::chrono::clock::duration minor_penalty,
-                             MEMORY_CONTROLLER& dram_)
-    : VirtualMemory(page_table_page_size, page_table_levels, minor_penalty, dram_, {})
+                             MEMORY_CONTROLLER& dram_, std::optional<champsim::data::bytes> physical_capacity_override)
+    : VirtualMemory(page_table_page_size, page_table_levels, minor_penalty, dram_, {}, physical_capacity_override)
 {
 }
 
 void VirtualMemory::populate_pages()
 {
-  assert(dram.size() > 1_MiB);
-  ppage_free_list.resize(((dram.size() - 1_MiB) / PAGE_SIZE).count());
+  assert(physical_capacity > 1_MiB);
+  ppage_free_list.resize(((physical_capacity - 1_MiB) / PAGE_SIZE).count());
   assert(ppage_free_list.size() != 0);
   champsim::page_number base_address =
       champsim::page_number{champsim::lowest_address_for_size(std::max<champsim::data::mebibytes>(champsim::data::bytes{PAGE_SIZE}, 1_MiB))};

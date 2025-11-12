@@ -160,7 +160,6 @@
   },
 
   "physical_memory": {
-    "data_rate": 3200,
     "channels": 1,
     "ranks": 1,
     "bankgroups": 8,
@@ -170,15 +169,31 @@
     "channel_width": 8,
     "wq_size": 64,
     "rq_size": 64,
-    "tCAS": 24,
-    "tRCD": 24,
-    "tRP": 24,
-    "tRAS": 52,
     "refresh_period": 32,
     "refreshes_per_period": 8192,
     "backend": "dramsim3",
-    "dramsim3_config": "DRAMsim3/configs/DDR4_8Gb_x8_2400.ini",
-    "dramsim3_output_dir": "dramsim3-output"
+    "layers": [
+      {
+        "name": "DRAM",
+        "data_rate": 3600,
+        "tCAS": 20,
+        "tRCD": 20,
+        "tRP": 20,
+        "tRAS": 48,
+        "dramsim3_config": "DRAMsim3/configs/DDR4_4Gb_x16_2400.ini",
+        "dramsim3_output_dir": "dramsim3-output"
+      },
+      {
+        "name": "DRAM_slow",
+        "data_rate": 2400,
+        "tCAS": 30,
+        "tRCD": 30,
+        "tRP": 30,
+        "tRAS": 60,
+        "dramsim3_config": "DRAMsim3/configs/CXL_mem.ini",
+        "dramsim3_output_dir": "dramsim3-output-slow"
+      }
+    ]
   },
 
   "virtual_memory": {
