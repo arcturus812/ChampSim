@@ -47,7 +47,7 @@ VirtualMemory::VirtualMemory(champsim::data::bytes page_table_page_size, std::si
     fmt::print("[VMEM] WARNING: physical memory size is smaller than virtual memory size.\n"); // LCOV_EXCL_LINE
   }
   populate_pages();
-  shuffle_pages();
+  // shuffle_pages(); // [PHW] disable for classify dram and cxl address space
 }
 
 VirtualMemory::VirtualMemory(champsim::data::bytes page_table_page_size, std::size_t page_table_levels, champsim::chrono::clock::duration minor_penalty,
@@ -100,7 +100,7 @@ void VirtualMemory::ppage_pop()
   if (available_ppages() == 0) {
     fmt::print("[VMEM] WARNING: Out of physical memory, freeing ppages\n");
     populate_pages();
-    shuffle_pages();
+    // shuffle_pages(); // [PHW] disable for classify dram and cxl address space
   }
 }
 
