@@ -41,8 +41,8 @@ def main():
     # Default simulation parameters
     # warmup_instructions = 20000000 # 20M
     # simulation_instructions = 100000000 # 100M
-    warmup_instructions = 1000000 # 20M
-    simulation_instructions = 10000000 # 100M
+    warmup_instructions = 100000 
+    simulation_instructions = 1000000
     
     # Build command
     cmd = [

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-ChampSim 바이너리 생성 스크립트 (One-factor-at-a-time)
-각 파라미터를 개별적으로 변경하며 바이너리를 생성합니다.
+ChampSim 바이너리 생성 스크립트 (ROB-based cross-factor)
+ROB를 제외한 각 요소에 대해 모든 ROB 값과 해당 요소 값의 조합을 생성합니다.
+나머지 요소들은 최소값으로 고정됩니다.
 """
 
 import json
@@ -15,16 +16,6 @@ ROOT_DIR = Path(__file__).parent.parent
 CONFIG_FILE = ROOT_DIR / "champsim_config.json"
 OUTPUT_DIR = ROOT_DIR / "bin_experiments"
 
-# 기본값 (통제 값)
-DEFAULTS = {
-    "ROB": 32,
-    "LQ": 10,
-    "SQ": 16,
-    "MSHR_L1": 8,
-    "MSHR_L2": 16,
-    "MSHR_LLC": 32
-}
-
 # 각 요소의 값 범위
 VARIATIONS = {
     "ROB": [32, 128, 192, 224, 352],
@@ -34,6 +25,18 @@ VARIATIONS = {
     "MSHR_L2": [16, 32, 64],
     "MSHR_LLC": [32, 64, 128]
 }
+
+
+def get_minimum_values():
+    """각 요소의 최소값을 반환"""
+    return {
+        "ROB": min(VARIATIONS["ROB"]),
+        "LQ": min(VARIATIONS["LQ"]),
+        "SQ": min(VARIATIONS["SQ"]),
+        "MSHR_L1": min(VARIATIONS["MSHR_L1"]),
+        "MSHR_L2": min(VARIATIONS["MSHR_L2"]),
+        "MSHR_LLC": min(VARIATIONS["MSHR_LLC"])
+    }
 
 
 def update_config(config, rob, lq, sq, mshr_l1, mshr_l2, mshr_llc):
@@ -106,7 +109,10 @@ def move_binary(binary_name):
 def main():
     """메인 실행 함수"""
     print("=" * 70)
-    print("ChampSim Binary Generation (One-Factor-at-a-Time)")
+    print("ChampSim Binary Generation (ROB-based Cross-Factor)")
+    print("=" * 70)
+    print("각 요소에 대해 모든 ROB 값과 해당 요소 값의 조합을 생성합니다.")
+    print("나머지 요소들은 최소값으로 고정됩니다.")
     print("=" * 70)
     
     # 원본 설정 로드
@@ -114,43 +120,61 @@ def main():
         original_config = json.load(f)
     
     generated_binaries = []
+    min_values = get_minimum_values()
     
-    # One-factor-at-a-time: 각 요소별로 순회
-    for factor, values in VARIATIONS.items():
-        print(f"\n[{factor}] Varying {factor} (fixing others at defaults)")
+    # ROB를 제외한 각 요소에 대해 순회
+    target_factors = [f for f in VARIATIONS.keys() if f != "ROB"]
+    
+    for factor in target_factors:
+        print(f"\n[{factor}] Varying ROB × {factor}")
+        print(f"  Fixed values: ", end="")
+        fixed_params = []
+        for f in target_factors:
+            if f != factor:
+                fixed_params.append(f"{f}={min_values[f]}")
+        print(", ".join(fixed_params))
         print("-" * 70)
         
-        for value in values:
-            # 현재 설정 준비 (기본값 + 현재 요소만 변경)
-            config = json.loads(json.dumps(original_config))  # deep copy
-            
-            params = DEFAULTS.copy()
-            params[factor] = value
-            
-            # 설정 업데이트
-            binary_name = update_config(
-                config,
-                params["ROB"],
-                params["LQ"],
-                params["SQ"],
-                params["MSHR_L1"],
-                params["MSHR_L2"],
-                params["MSHR_LLC"]
-            )
-            
-            print(f"\n{factor}={value}: {binary_name}")
-            
-            # 설정 저장
-            save_config(config)
-            
-            # 컴파일
-            if not compile_champsim():
-                print(f"  Skipping due to compilation error")
-                continue
-            
-            # 바이너리 이동
-            if move_binary(binary_name):
-                generated_binaries.append(binary_name)
+        # 모든 ROB 값과 현재 요소 값의 조합 생성
+        for rob_value in VARIATIONS["ROB"]:
+            for factor_value in VARIATIONS[factor]:
+                # 현재 설정 준비
+                config = json.loads(json.dumps(original_config))  # deep copy
+                
+                # 파라미터 설정: ROB와 현재 요소는 조합값, 나머지는 최소값
+                params = {
+                    "ROB": rob_value,
+                    "LQ": min_values["LQ"] if factor != "LQ" else factor_value,
+                    "SQ": min_values["SQ"] if factor != "SQ" else factor_value,
+                    "MSHR_L1": min_values["MSHR_L1"] if factor != "MSHR_L1" else factor_value,
+                    "MSHR_L2": min_values["MSHR_L2"] if factor != "MSHR_L2" else factor_value,
+                    "MSHR_LLC": min_values["MSHR_LLC"] if factor != "MSHR_LLC" else factor_value
+                }
+                
+                # 설정 업데이트
+                binary_name = update_config(
+                    config,
+                    params["ROB"],
+                    params["LQ"],
+                    params["SQ"],
+                    params["MSHR_L1"],
+                    params["MSHR_L2"],
+                    params["MSHR_LLC"]
+                )
+                
+                print(f"  ROB={rob_value}, {factor}={factor_value}: {binary_name}")
+                
+                # 설정 저장
+                save_config(config)
+                
+                # 컴파일
+                if not compile_champsim():
+                    print(f"    ❌ Skipping due to compilation error")
+                    continue
+                
+                # 바이너리 이동
+                if move_binary(binary_name):
+                    generated_binaries.append(binary_name)
     
     # 원본 설정 복원
     save_config(original_config)
@@ -162,9 +186,15 @@ def main():
     print(f"\nOutput directory: {OUTPUT_DIR}")
     print("\nGenerated binaries:")
     for i, binary in enumerate(generated_binaries, 1):
-        print(f"  {i:2d}. {binary}")
+        print(f"  {i:3d}. {binary}")
     
     print(f"\nTotal: {len(generated_binaries)} binaries")
+    
+    # 예상 개수 출력
+    expected_count = 0
+    for factor in target_factors:
+        expected_count += len(VARIATIONS["ROB"]) * len(VARIATIONS[factor])
+    print(f"Expected: {expected_count} binaries")
 
 
 if __name__ == "__main__":

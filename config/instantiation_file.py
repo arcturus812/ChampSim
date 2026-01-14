@@ -23,7 +23,7 @@ from . import util
 from . import cxx
 
 pmem_fmtstr = 'champsim::chrono::picoseconds{{{clock_period_dbus}}}, champsim::chrono::picoseconds{{{clock_period_mc}}}, std::size_t{{{_tRP}}}, std::size_t{{{_tRCD}}}, std::size_t{{{_tCAS}}}, std::size_t{{{_tRAS}}}, champsim::chrono::microseconds{{{_refresh_period}}}, {{{_ulptr}}}, {rq_size}, {wq_size}, {channels}, champsim::data::bytes{{{channel_width}}}, {_bank_rows}, {_bank_columns}, {ranks}, {bankgroups}, {banks}, {_refreshes_per_period}, {_dramsim3_ctor}'
-vmem_fmtstr = 'champsim::data::bytes{{{pte_page_size}}}, {num_levels}, champsim::chrono::picoseconds{{{clock_period}*{minor_fault_penalty}}}, {dram_handle}, {_randomization}, {physical_capacity}'
+vmem_fmtstr = 'champsim::data::bytes{{{pte_page_size}}}, {num_levels}, champsim::chrono::picoseconds{{{clock_period}*{minor_fault_penalty}}}, {dram_handle}, champsim::data::bytes{{{dram_size}}}, {_randomization}, {physical_capacity}'
 
 queue_fmtstr = '{rq_size}, {pq_size}, {wq_size}, champsim::data::bits{{{_offset_bits}}}, {_queue_check_full_addr:b}'
 
@@ -384,6 +384,7 @@ def get_instantiation_lines(cores, caches, ptws, pmems, vmem, build_id):
         'vmem{',
         vmem_fmtstr.format(
             dram_handle='DRAM_layers.at(0)',
+            dram_size='(DRAM_layers.empty() ? champsim::data::bytes{0} : DRAM_layers.front().size())',
             physical_capacity='total_physical_memory',
             clock_period=global_clock_period,
             _randomization= '{}' if (isinstance(vmem['randomization'],bool) and vmem['randomization'] == False) else int(vmem['randomization']),

@@ -39,6 +39,7 @@ private:
   std::optional<uint64_t> randomization_seed;
   MEMORY_CONTROLLER& dram;
   const champsim::data::bytes physical_capacity;
+  const champsim::data::bytes dram_capacity;  // DRAM 레이어 크기
 
 public:
   const champsim::chrono::clock::duration minor_fault_penalty;
@@ -46,13 +47,21 @@ public:
   const pte_entry pte_page_size; // Size of a PTE page
 
 private:
-  std::deque<champsim::page_number> ppage_free_list;
+  // 두 개의 free list로 분리
+  std::deque<champsim::page_number> ppage_free_list_dram;  // Page table용
+  std::deque<champsim::page_number> ppage_free_list_cxl;   // Data pages용
   champsim::page_number active_pte_page{};
   champsim::address_slice<champsim::dynamic_extent> next_pte_page;
 
-  // champsim::page_number next_ppage;
-  // champsim::page_number last_ppage;
+  // 영역별 접근 함수
+  [[nodiscard]] champsim::page_number ppage_front_dram() const;
+  [[nodiscard]] champsim::page_number ppage_front_cxl() const;
+  void ppage_pop_dram();
+  void ppage_pop_cxl();
+  [[nodiscard]] std::size_t available_ppages_dram() const;
+  [[nodiscard]] std::size_t available_ppages_cxl() const;
 
+  // 호환성 함수들
   [[nodiscard]] champsim::page_number ppage_front() const;
   void ppage_pop();
 
@@ -72,9 +81,11 @@ public:
    *   Future versions may perform major page faults through this reference.
    */
   VirtualMemory(champsim::data::bytes page_table_page_size, std::size_t page_table_levels, champsim::chrono::clock::duration minor_penalty,
-                MEMORY_CONTROLLER& dram_, std::optional<champsim::data::bytes> physical_capacity_override = std::nullopt);
+                MEMORY_CONTROLLER& dram_, champsim::data::bytes dram_capacity_,
+                std::optional<champsim::data::bytes> physical_capacity_override = std::nullopt);
   VirtualMemory(champsim::data::bytes page_table_page_size, std::size_t page_table_levels, champsim::chrono::clock::duration minor_penalty,
-                MEMORY_CONTROLLER& dram_, std::optional<uint64_t> randomization_seed_,
+                MEMORY_CONTROLLER& dram_, champsim::data::bytes dram_capacity_,
+                std::optional<uint64_t> randomization_seed_,
                 std::optional<champsim::data::bytes> physical_capacity_override = std::nullopt);
 
   /**

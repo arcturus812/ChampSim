@@ -2,6 +2,7 @@
 """
 ChampSim 실험 실행 스크립트
 생성된 바이너리들을 여러 trace에 대해 병렬 실행하고 결과를 CSV로 저장합니다.
+DRAM과 CXL 두 가지 메모리 타입에 대해 각각 실험을 수행합니다.
 """
 
 import concurrent.futures
@@ -10,29 +11,36 @@ import re
 from pathlib import Path
 import pandas as pd
 import sys
-from collections import defaultdict
 
 # 디렉토리 설정
 SCRIPT_DIR = Path(__file__).parent.absolute()
 PROJECT_ROOT = SCRIPT_DIR.parent
-BIN_DIR = PROJECT_ROOT / "bin_experiments"
+BIN_DIRS = {
+    'dram': PROJECT_ROOT / "bin_experiments_dram",
+    'cxl': PROJECT_ROOT / "bin_experiments_cxl"
+}
 TRACE_DIR = Path("/home/hwpark/workspace/storage/trace/champsim/spec_total")
-LOG_DIR = SCRIPT_DIR / "logs"
-OUTPUT_CSV = PROJECT_ROOT / "result.csv"
+LOG_DIRS = {
+    'dram': SCRIPT_DIR / "logs_dram",
+    'cxl': SCRIPT_DIR / "logs_cxl"
+}
+OUTPUT_CSVS = {
+    'dram': PROJECT_ROOT / "result_dram.csv",
+    'cxl': PROJECT_ROOT / "result_cxl.csv"
+}
 
 # Trace 파일 목록 (11개)
 TRACES = [
-    "429.mcf-51B.champsimtrace.xz",
-    "429.mcf-217B.champsimtrace.xz",
     "429.mcf-184B.champsimtrace.xz",
+    "605.mcf_s-1152B.champsimtrace.xz",
     "470.lbm-1274B.champsimtrace.xz",
     "450.soplex-92B.champsimtrace.xz",
-    "619.lbm_s-2676B.champsimtrace.xz",
-    "649.fotonik3d_s-10881B.champsimtrace.xz",
     "649.fotonik3d_s-1B.champsimtrace.xz",
-    "605.mcf_s-1152B.champsimtrace.xz",
     "403.gcc-16B.champsimtrace.xz",
-    "602.gcc_s-734B.champsimtrace.xz"
+    "602.gcc_s-734B.champsimtrace.xz",
+    "471.omnetpp-188B.champsimtrace.xz",
+    "410.bwaves-945B.champsimtrace.xz",
+    "481.wrf-816B.champsimtrace.xz"
 ]
 
 # 실험 파라미터
@@ -105,8 +113,7 @@ def run_experiment(binary_path, trace_path, log_path):
                 cmd,
                 stdout=log_file,
                 stderr=subprocess.STDOUT,
-                cwd=PROJECT_ROOT,
-                timeout=3600  # 1시간 타임아웃
+                cwd=PROJECT_ROOT
             )
         
         if result.returncode == 0:
@@ -115,30 +122,30 @@ def run_experiment(binary_path, trace_path, log_path):
             return (binary_name, trace_name, ipc, True)
         else:
             return (binary_name, trace_name, None, False)
-    except subprocess.TimeoutExpired:
-        print(f"  Timeout: {binary_name} with {trace_name}")
-        return (binary_name, trace_name, None, False)
     except Exception as e:
         print(f"  Error running {binary_name} with {trace_name}: {e}")
         return (binary_name, trace_name, None, False)
 
 
-def main():
-    """메인 실행 함수"""
-    print("=" * 70)
-    print("ChampSim Experiment Runner")
+def run_experiments_for_memory_type(memory_type, bin_dir, log_dir, output_csv):
+    """
+    특정 메모리 타입에 대한 실험 실행
+    """
+    print("\n" + "=" * 70)
+    print(f"Running experiments for {memory_type.upper()}")
     print("=" * 70)
     
     # 바이너리 목록 스캔
-    if not BIN_DIR.exists():
-        print(f"Error: Binary directory not found: {BIN_DIR}")
-        print("Please run compile_cases.py first to generate binaries.")
-        sys.exit(1)
+    if not bin_dir.exists():
+        print(f"Warning: Binary directory not found: {bin_dir}")
+        print(f"Skipping {memory_type.upper()} experiments.")
+        return
     
-    binaries = sorted([b for b in BIN_DIR.iterdir() if b.is_file() and b.stat().st_mode & 0o111])
+    binaries = sorted([b for b in bin_dir.iterdir() if b.is_file() and b.stat().st_mode & 0o111])
     if not binaries:
-        print(f"Error: No executable binaries found in {BIN_DIR}")
-        sys.exit(1)
+        print(f"Warning: No executable binaries found in {bin_dir}")
+        print(f"Skipping {memory_type.upper()} experiments.")
+        return
     
     print(f"Found {len(binaries)} binaries")
     print(f"Trace files: {len(TRACES)}")
@@ -156,8 +163,8 @@ def main():
             trace_paths.append((trace_name, trace_path))
     
     if not trace_paths:
-        print("Error: No valid trace files found")
-        sys.exit(1)
+        print(f"Error: No valid trace files found for {memory_type.upper()}")
+        return
     
     # 실험 조합 생성
     experiments = []
@@ -167,11 +174,11 @@ def main():
             # 로그 파일명: {binary_name}_{trace_name_without_ext}.log
             trace_base = trace_name.replace('.champsimtrace.xz', '')
             log_name = f"{binary_name}_{trace_base}.log"
-            log_path = LOG_DIR / log_name
+            log_path = log_dir / log_name
             experiments.append((binary, trace_path, log_path))
     
     print(f"\nStarting {len(experiments)} experiments...")
-    print(f"Log directory: {LOG_DIR}")
+    print(f"Log directory: {log_dir}")
     print()
     
     # 병렬 실행
@@ -196,19 +203,18 @@ def main():
                 
                 if result[3]:  # success
                     ipc_str = f"{result[2]:.4f}" if result[2] is not None else "N/A"
-                    print(f"[{completed}/{len(experiments)}] ✓ {binary_name} × {trace_name}: IPC={ipc_str}")
+                    print(f"[{memory_type.upper()}] [{completed}/{len(experiments)}] ✓ {binary_name} × {trace_name}: IPC={ipc_str}")
                 else:
-                    print(f"[{completed}/{len(experiments)}] ✗ {binary_name} × {trace_name}: FAILED")
+                    print(f"[{memory_type.upper()}] [{completed}/{len(experiments)}] ✗ {binary_name} × {trace_name}: FAILED")
             except Exception as e:
-                print(f"[{completed}/{len(experiments)}] ✗ {binary_name} × {trace_name}: ERROR - {e}")
+                print(f"[{memory_type.upper()}] [{completed}/{len(experiments)}] ✗ {binary_name} × {trace_name}: ERROR - {e}")
                 results.append((binary_name, trace_name, None, False))
     
-    print("\n" + "=" * 70)
-    print("Experiments completed!")
+    print(f"\n[{memory_type.upper()}] Experiments completed!")
     print("=" * 70)
     
     # 결과 정리 및 CSV 생성
-    print("\nGenerating CSV...")
+    print(f"\n[{memory_type.upper()}] Generating CSV...")
     
     # 바이너리별 파라미터 추출
     binary_params = {}
@@ -218,57 +224,68 @@ def main():
         if params:
             binary_params[binary_name] = params
     
-    # 결과를 딕셔너리로 정리
-    # 구조: {binary_name: {trace_name: ipc}}
-    result_dict = defaultdict(dict)
-    for binary_name, trace_name, ipc, success in results:
-        trace_base = trace_name.replace('.champsimtrace.xz', '')
-        result_dict[binary_name][trace_base] = ipc if success and ipc is not None else None
-    
-    # DataFrame 생성
+    # DataFrame 생성 (롱 형식: 각 행이 바이너리-trace 조합)
     rows = []
-    trace_names_clean = [t.replace('.champsimtrace.xz', '') for t in TRACES]
-    
-    for binary_name in sorted(binary_params.keys()):
-        params = binary_params[binary_name]
-        row = {
-            'ROB': params['ROB'],
-            'LQ': params['LQ'],
-            'SQ': params['SQ'],
-            'MSHR_L1': params['MSHR_L1'],
-            'MSHR_L2': params['MSHR_L2'],
-            'MSHR_LLC': params['MSHR_LLC']
-        }
-        
-        # 각 trace별 IPC 추가
-        for trace_name in trace_names_clean:
-            row[trace_name] = result_dict[binary_name].get(trace_name)
-        
-        rows.append(row)
+    for binary_name, trace_name, ipc, success in results:
+        params = binary_params.get(binary_name)
+        if params:
+            trace_base = trace_name.replace('.champsimtrace.xz', '')
+            row = {
+                'workload': trace_base,
+                'ROB': params['ROB'],
+                'LQ': params['LQ'],
+                'SQ': params['SQ'],
+                'MSHR_L1': params['MSHR_L1'],
+                'MSHR_L2': params['MSHR_L2'],
+                'MSHR_LLC': params['MSHR_LLC'],
+                'IPC': ipc if success and ipc is not None else None
+            }
+            rows.append(row)
     
     # DataFrame 생성 및 저장
     df = pd.DataFrame(rows)
     
-    # 컬럼 순서: 파라미터 6개 + trace들
-    columns = ['ROB', 'LQ', 'SQ', 'MSHR_L1', 'MSHR_L2', 'MSHR_LLC'] + trace_names_clean
+    # 컬럼 순서: workload, ROB, LQ, SQ, MSHR_L1, MSHR_L2, MSHR_LLC, IPC
+    columns = ['workload', 'ROB', 'LQ', 'SQ', 'MSHR_L1', 'MSHR_L2', 'MSHR_LLC', 'IPC']
     df = df[columns]
     
-    df.to_csv(OUTPUT_CSV, index=False)
+    df.to_csv(output_csv, index=False)
     
-    print(f"Results saved to: {OUTPUT_CSV}")
+    print(f"[{memory_type.upper()}] Results saved to: {output_csv}")
     
     # 통계 출력
     total_experiments = len(experiments)
     successful = sum(1 for r in results if r[3] and r[2] is not None)
     failed = total_experiments - successful
     
-    print("\n" + "=" * 70)
-    print("Summary")
+    print(f"\n[{memory_type.upper()}] Summary")
     print("=" * 70)
     print(f"Total experiments: {total_experiments}")
     print(f"Successful: {successful}")
     print(f"Failed: {failed}")
     print(f"Success rate: {successful/total_experiments*100:.1f}%")
+    print("=" * 70)
+
+
+def main():
+    """메인 실행 함수"""
+    print("=" * 70)
+    print("ChampSim Experiment Runner (DRAM & CXL)")
+    print("=" * 70)
+    
+    # 각 메모리 타입에 대해 실험 실행
+    for memory_type in ['dram', 'cxl']:
+        bin_dir = BIN_DIRS[memory_type]
+        log_dir = LOG_DIRS[memory_type]
+        output_csv = OUTPUT_CSVS[memory_type]
+        
+        run_experiments_for_memory_type(memory_type, bin_dir, log_dir, output_csv)
+    
+    print("\n" + "=" * 70)
+    print("All experiments completed!")
+    print("=" * 70)
+    print(f"DRAM results: {OUTPUT_CSVS['dram']}")
+    print(f"CXL results: {OUTPUT_CSVS['cxl']}")
     print("=" * 70)
 
 

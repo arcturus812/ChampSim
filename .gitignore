@@ -5,6 +5,15 @@ _configuration.mk
 *.pyc
 
 bin/
+bin*/
+bin_experiments_dram/
+bin_experiments_cxl/
+bin_experiments/
+
+
+scripts/logs*/
+result*
+*.log
 
 **/*.o
 **/*.d
@@ -12,6 +21,8 @@ bin/
 test/000-test-main
 
 tracer/pin/obj-intel64/
+*.trace
+trace_generator
 
 vcpkg_installed/
 
@@ -30,5 +41,6 @@ compile_commands.json
 
 .vscode/
 **/.DS_Store
-dramsim3-output/dramsim3epoch.json dramsim3-output/dramsim3.json dramsim3-output/dramsim3.txt
-dramsim3-output-slow/dramsim3epoch.json dramsim3-output-slow/dramsim3.json dramsim3-output-slow/dramsim3.txt
+dramsim3-output-slow/
+dramsim3-output/
+.gitignore
