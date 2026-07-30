@@ -23,6 +23,7 @@
 #include <fmt/chrono.h>
 #include <fmt/core.h>
 
+#include "cxl_repro.h"
 #include "environment.h"
 #include "ooo_cpu.h"
 #include "operable.h"
@@ -71,6 +72,11 @@ phase_stats do_phase(const phase_info& phase, environment& env, std::vector<trac
     op.begin_phase();
   }
 
+  // [CXLREPRO] count only the measured (non-warmup) phase
+  if (!is_warmup) {
+    cxl_repro::reset_stats();
+  }
+
   const auto time_quantum = std::accumulate(std::cbegin(operables), std::cend(operables), champsim::chrono::clock::duration::max(),
                                             [](const auto acc, const operable& y) { return std::min(acc, y.clock_period); });
 
@@ -78,7 +84,9 @@ phase_stats do_phase(const phase_info& phase, environment& env, std::vector<trac
   uint64_t livelock_period{10000000};
   uint64_t livelock_timer{0};
   //                                   die | critical | warning
-  std::vector<double> livelock_threshold{0.01, 0.02, 0.05};
+  // [CXLREPRO] die threshold is runtime-configurable; saturated far-memory
+  // workloads progress legitimately below the stock 0.01 IPC
+  std::vector<double> livelock_threshold{cxl_repro::knobs().livelock_die_ipc, 0.02, 0.05};
   std::vector<uint64_t> livelock_instr(std::size(env.cpu_view()), 0);
 
   // Perform phase

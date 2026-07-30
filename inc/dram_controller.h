@@ -98,6 +98,7 @@ struct DRAM_CHANNEL final : public champsim::operable {
   struct request_type {
     bool scheduled = false;
     bool forward_checked = false;
+    bool is_write = false; // [CXLREPRO] direction tag, set on WQ insertion
 
     uint8_t asid[2] = {std::numeric_limits<uint8_t>::max(), std::numeric_limits<uint8_t>::max()};
 
@@ -138,6 +139,7 @@ struct DRAM_CHANNEL final : public champsim::operable {
   using request_array_type = std::vector<BANK_REQUEST>;
   request_array_type bank_request;
   request_array_type::iterator active_request;
+  request_array_type::iterator active_request_wr; // [CXLREPRO] write-direction bus slot (duplex mode only)
 
   // track bankgroup accesses
   std::vector<champsim::chrono::clock::time_point> bankgroup_readytime{address_mapping.ranks() * address_mapping.bankgroups(),
@@ -148,6 +150,7 @@ struct DRAM_CHANNEL final : public champsim::operable {
 
   bool write_mode = false;
   champsim::chrono::clock::time_point dbus_cycle_available{};
+  champsim::chrono::clock::time_point dbus_cycle_available_wr{}; // [CXLREPRO] duplex mode only
 
   std::size_t refresh_row = 0;
   champsim::chrono::clock::time_point last_refresh{};
@@ -164,17 +167,24 @@ struct DRAM_CHANNEL final : public champsim::operable {
 
   const champsim::chrono::clock::duration tADD;
 
+  // [CXLREPRO] duplex link mode: reads and writes are served by two independent
+  // data buses (full-duplex, e.g. a CXL link) instead of one turnaround bus.
+  const bool duplex;
+
   DRAM_CHANNEL(champsim::chrono::picoseconds dbus_period, champsim::chrono::picoseconds mc_period, std::size_t t_add, std::size_t t_rp, std::size_t t_rcd, std::size_t t_cas,
                std::size_t t_ras, champsim::chrono::microseconds refresh_period, std::size_t refreshes_per_period, champsim::data::bytes width,
-               std::size_t rq_size, std::size_t wq_size, DRAM_ADDRESS_MAPPING addr_mapping);
+               std::size_t rq_size, std::size_t wq_size, DRAM_ADDRESS_MAPPING addr_mapping, bool duplex_ = false);
 
   void check_write_collision();
   void check_read_collision();
   long finish_dbus_request();
+  long finish_dbus_request_on(request_array_type::iterator& slot); // [CXLREPRO]
   long schedule_refresh();
   void swap_write_mode();
   long populate_dbus();
+  long populate_dbus_duplex(); // [CXLREPRO]
   DRAM_CHANNEL::queue_type::iterator schedule_packet();
+  DRAM_CHANNEL::queue_type::iterator schedule_packet_from(bool from_wq); // [CXLREPRO]
   long service_packet(DRAM_CHANNEL::queue_type::iterator pkt);
 
   void initialize() final;
@@ -198,7 +208,12 @@ class MEMORY_CONTROLLER : public champsim::operable
 
   void initiate_requests();
   bool add_rq(const request_type& packet, champsim::channel* ul);
+
+public:
+  // [CXLREPRO] public so the NT-store bypass path can enqueue writes directly
   bool add_wq(const request_type& packet);
+
+private:
 
   const DRAM_ADDRESS_MAPPING address_mapping;
 
@@ -207,11 +222,16 @@ class MEMORY_CONTROLLER : public champsim::operable
 
 public:
   std::vector<DRAM_CHANNEL> channels;
+  std::string channel_name_prefix{"Channel "}; // [CXLREPRO] distinguishes DRAM/FAR channels in stats output
+
+  // [CXLREPRO] writes still queued (upstream channel WQs + per-channel DRAM WQs),
+  // so issued == completed + backlog can be checked exactly
+  std::size_t pending_write_backlog() const;
 
   MEMORY_CONTROLLER(champsim::chrono::picoseconds dbus_period, champsim::chrono::picoseconds mc_period, std::size_t additional_cycle, std::size_t t_rp, std::size_t t_rcd, std::size_t t_cas,
                     std::size_t t_ras, champsim::chrono::microseconds refresh_period, std::vector<channel_type*>&& ul, std::size_t rq_size, std::size_t wq_size,
                     std::size_t chans, champsim::data::bytes chan_width, std::size_t rows, std::size_t columns, std::size_t ranks, std::size_t bankgroups,
-                    std::size_t banks, std::size_t refreshes_per_period);
+                    std::size_t banks, std::size_t refreshes_per_period, bool duplex_mode = false);
 
   void initialize() final;
   long operate() final;

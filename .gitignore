@@ -33,3 +33,8 @@ compile_commands.json
 
 .vscode/
 **/.DS_Store
+
+# [CXLREPRO] generated reproduction artifacts
+script/cxl_repro/traces/
+script/cxl_repro/tracegen
+.omc/

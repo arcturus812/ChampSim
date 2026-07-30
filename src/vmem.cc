@@ -22,6 +22,8 @@
 #include <unordered_set>
 #include <fmt/core.h>
 
+#include "cxl_repro.h"
+
 #include "champsim.h"
 #include "dram_controller.h"
 #include "util/bits.h"
@@ -38,6 +40,26 @@ VirtualMemory::VirtualMemory(champsim::data::bytes page_table_page_size, std::si
 {
   assert(pte_page_size > 1_kiB);
   assert(champsim::is_power_of_2(pte_page_size.count()));
+
+  // [CXLREPRO] allow runtime page-placement policy override via CXL_ALLOC_POLICY
+  switch (cxl_repro::knobs().alloc_policy) {
+  case 0:
+    allocation_policy = MemoryAllocationPolicy::FIRST_TOUCH;
+    break;
+  case 1:
+    allocation_policy = MemoryAllocationPolicy::ONLY_FAR_MEM;
+    break;
+  case 2:
+    allocation_policy = MemoryAllocationPolicy::ROUND_ROBIN;
+    break;
+  default:
+    break; // keep branch default
+  }
+  fmt::print("[VMEM] allocation_policy: {}\n",
+             allocation_policy == MemoryAllocationPolicy::FIRST_TOUCH    ? "first_touch"
+             : allocation_policy == MemoryAllocationPolicy::ONLY_FAR_MEM ? "only_far"
+             : allocation_policy == MemoryAllocationPolicy::ROUND_ROBIN  ? "round_robin"
+                                                                         : "feedback");
 
   champsim::page_number last_vpage{
       champsim::lowest_address_for_size(champsim::data::bytes{PAGE_SIZE + champsim::ipow(pte_page_size.count(), static_cast<unsigned>(pt_levels))})};

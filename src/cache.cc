@@ -26,6 +26,8 @@
 #include "bandwidth.h"
 #include "champsim.h"
 #include "chrono.h"
+#include "cxl_repro.h"
+#include "dram_controller.h"
 #include "deadlock.h"
 #include "instruction.h"
 #include "util/algorithm.h"
@@ -216,6 +218,9 @@ bool CACHE::handle_fill(const mshr_type& fill_mshr)
     if(this->NAME == "LLC"){
       if(::is_far_addr(writeback_packet.address.to<uint64_t>())){
         success = lower_level_far->add_wq(writeback_packet);
+        if (success) {
+          ++cxl_repro::stats().far_writebacks; // [CXLREPRO]
+        }
       }else{
         success = lower_level->add_wq(writeback_packet);
       }
@@ -390,6 +395,32 @@ bool CACHE::handle_miss(const tag_lookup_type& handle_pkt)
                current_time.time_since_epoch() / clock_period);
   }
 
+  // [CXLREPRO] NT-store proxy: a first-level store miss to a far-memory address
+  // bypasses write-allocation entirely and streams the line to the far WQ,
+  // modeling a non-temporal store draining through write-combining buffers.
+  // Skipped when an MSHR for the line is already in flight so the regular
+  // merge path keeps its invariants.
+  if (cxl_repro::knobs().nt_store && this->match_offset_bits && handle_pkt.type == access_type::WRITE && cxl_repro::far_mem() != nullptr
+      && ::is_far_addr(handle_pkt.address.to<uint64_t>())
+      && std::find_if(std::begin(MSHR), std::end(MSHR), matches_address(handle_pkt.address)) == std::end(MSHR)) {
+    champsim::channel::request_type wq_pkt;
+    wq_pkt.address = handle_pkt.address;
+    wq_pkt.v_address = handle_pkt.v_address;
+    wq_pkt.type = access_type::WRITE;
+    wq_pkt.cpu = handle_pkt.cpu;
+    wq_pkt.asid[0] = handle_pkt.asid[0];
+    wq_pkt.asid[1] = handle_pkt.asid[1];
+    wq_pkt.response_requested = false;
+
+    bool bypass_ok = cxl_repro::far_mem()->add_wq(wq_pkt);
+    if (bypass_ok) {
+      ++cxl_repro::stats().nt_bypass_lines;
+    } else {
+      ++cxl_repro::stats().nt_bypass_retry; // far WQ full: fail this tag check so it retries
+    }
+    return bypass_ok;
+  }
+
   mshr_type to_allocate{handle_pkt, current_time};
 
   cpu = handle_pkt.cpu;
@@ -438,6 +469,16 @@ bool CACHE::handle_miss(const tag_lookup_type& handle_pkt)
           success = lower_level_far->add_rq(mshr_pkt.second);
         }else{
           success = lower_level_far->add_pq(mshr_pkt.second);
+        }
+        // [CXLREPRO] directional ledger: what the LLC asks of far memory's read direction
+        if (success) {
+          if (mshr_pkt.second.type == access_type::RFO) {
+            ++cxl_repro::stats().far_rfo_fetches;
+          } else if (mshr_pkt.second.type == access_type::PREFETCH) {
+            ++cxl_repro::stats().far_prefetch_reads;
+          } else {
+            ++cxl_repro::stats().far_demand_reads;
+          }
         }
       }else{
         if(send_to_rq){

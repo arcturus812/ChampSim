@@ -30,19 +30,20 @@
 MEMORY_CONTROLLER::MEMORY_CONTROLLER(champsim::chrono::picoseconds dbus_period, champsim::chrono::picoseconds mc_period, std::size_t additional_cycle, std::size_t t_rp, std::size_t t_rcd,
                                      std::size_t t_cas, std::size_t t_ras, champsim::chrono::microseconds refresh_period, std::vector<channel_type*>&& ul,
                                      std::size_t rq_size, std::size_t wq_size, std::size_t chans, champsim::data::bytes chan_width, std::size_t rows,
-                                     std::size_t columns, std::size_t ranks, std::size_t bankgroups, std::size_t banks, std::size_t refreshes_per_period)
+                                     std::size_t columns, std::size_t ranks, std::size_t bankgroups, std::size_t banks, std::size_t refreshes_per_period,
+                                     bool duplex_mode)
     : champsim::operable(mc_period), queues(std::move(ul)), channel_width(chan_width),
       address_mapping(chan_width, BLOCK_SIZE / chan_width.count(), chans, bankgroups, banks, columns, ranks, rows), data_bus_period(dbus_period)
 {
   for (std::size_t i{0}; i < chans; ++i) {
     channels.emplace_back(dbus_period, mc_period, additional_cycle, t_rp, t_rcd, t_cas, t_ras, refresh_period, refreshes_per_period, chan_width, rq_size, wq_size,
-                          address_mapping);
+                          address_mapping, duplex_mode);
   }
 }
 
 DRAM_CHANNEL::DRAM_CHANNEL(champsim::chrono::picoseconds dbus_period, champsim::chrono::picoseconds mc_period, std::size_t t_add, std::size_t t_rp, std::size_t t_rcd,
                            std::size_t t_cas, std::size_t t_ras, champsim::chrono::microseconds refresh_period, std::size_t refreshes_per_period,
-                           champsim::data::bytes width, std::size_t rq_size, std::size_t wq_size, DRAM_ADDRESS_MAPPING addr_mapper)
+                           champsim::data::bytes width, std::size_t rq_size, std::size_t wq_size, DRAM_ADDRESS_MAPPING addr_mapper, bool duplex_)
     : champsim::operable(mc_period), address_mapping(addr_mapper), WQ{wq_size}, RQ{rq_size}, channel_width(width),
       DRAM_ROWS_PER_REFRESH(address_mapping.rows() / refreshes_per_period), tRP(t_rp * mc_period), tRCD(t_rcd * mc_period), tCAS(t_cas * mc_period),
       tRAS(t_ras * mc_period), tREF(refresh_period / refreshes_per_period),
@@ -53,12 +54,14 @@ DRAM_CHANNEL::DRAM_CHANNEL(champsim::chrono::picoseconds dbus_period, champsim::
       DRAM_DBUS_BANKGROUP_STALL(
           std::chrono::duration_cast<champsim::chrono::clock::duration>((dbus_period * std::max(address_mapping.prefetch_size / 3, std::size_t{1})))),
       data_bus_period(dbus_period),
-      tADD(t_add * mc_period)
+      tADD(t_add * mc_period),
+      duplex(duplex_)
 {
   request_array_type br(address_mapping.ranks() * address_mapping.banks() * address_mapping.bankgroups());
   bank_request = br;
   active_request = std::end(bank_request);
-  fmt::print("tADD: {} picoseconds\n", tADD.count());
+  active_request_wr = std::end(bank_request);
+  fmt::print("tADD: {} picoseconds duplex: {}\n", tADD.count(), duplex);
 }
 
 DRAM_ADDRESS_MAPPING::DRAM_ADDRESS_MAPPING(champsim::data::bytes channel_width_, std::size_t pref_size_, std::size_t channels_, std::size_t bankgroups_,
@@ -133,30 +136,56 @@ long DRAM_CHANNEL::operate()
 
   check_write_collision();
   check_read_collision();
-  progress += finish_dbus_request();
-  swap_write_mode();
-  progress += schedule_refresh();
-  progress += populate_dbus();
-  progress += service_packet(schedule_packet());
+  if (duplex) {
+    // [CXLREPRO] full-duplex link: independent read and write data buses, no
+    // write-mode switching and no turnaround. Banks (device-internal media)
+    // remain shared between both directions.
+    progress += finish_dbus_request_on(active_request);
+    progress += finish_dbus_request_on(active_request_wr);
+    progress += schedule_refresh();
+    progress += populate_dbus_duplex();
+    // Alternate which direction schedules into banks first each cycle. Bank
+    // slots are held from scheduling until bus completion (tADD-dominated),
+    // so a fixed read-first order lets a full RQ camp on every freed bank and
+    // starve writebacks behind an unbounded upstream queue.
+    const bool wq_first = ((current_time.time_since_epoch() / clock_period) % 2) != 0;
+    progress += service_packet(schedule_packet_from(wq_first));
+    progress += service_packet(schedule_packet_from(!wq_first));
+  } else {
+    progress += finish_dbus_request();
+    swap_write_mode();
+    progress += schedule_refresh();
+    progress += populate_dbus();
+    progress += service_packet(schedule_packet());
+  }
 
   return progress;
 }
 
-long DRAM_CHANNEL::finish_dbus_request()
+long DRAM_CHANNEL::finish_dbus_request() { return finish_dbus_request_on(active_request); }
+
+long DRAM_CHANNEL::finish_dbus_request_on(request_array_type::iterator& slot)
 {
   long progress{0};
 
-  if (active_request != std::end(bank_request) && active_request->ready_time <= current_time) {
-    response_type response{active_request->pkt->value().address, active_request->pkt->value().v_address, active_request->pkt->value().data,
-                           active_request->pkt->value().pf_metadata, active_request->pkt->value().instr_depend_on_me};
-    for (auto* ret : active_request->pkt->value().to_return) {
+  if (slot != std::end(bank_request) && slot->ready_time <= current_time) {
+    response_type response{slot->pkt->value().address, slot->pkt->value().v_address, slot->pkt->value().data,
+                           slot->pkt->value().pf_metadata, slot->pkt->value().instr_depend_on_me};
+    for (auto* ret : slot->pkt->value().to_return) {
       ret->push_back(response);
     }
 
-    active_request->valid = false;
+    // [CXLREPRO] per-direction completion accounting
+    if (slot->pkt->value().is_write) {
+      ++sim_stats.WR_LINES;
+    } else {
+      ++sim_stats.RD_LINES;
+    }
 
-    active_request->pkt->reset();
-    active_request = std::end(bank_request);
+    slot->valid = false;
+
+    slot->pkt->reset();
+    slot = std::end(bank_request);
     ++progress;
   }
 
@@ -272,6 +301,13 @@ long DRAM_CHANNEL::populate_dbus()
       // set when bankgroup dbus will be next ready
       bankgroup_readytime[op_bankgroup] = current_time + DRAM_DBUS_RETURN_TIME + DRAM_DBUS_BANKGROUP_STALL;
 
+      // [CXLREPRO] bus occupancy accounting (legacy shared bus: one direction at a time)
+      if (active_request->pkt->value().is_write) {
+        sim_stats.wr_bus_busy_ps += DRAM_DBUS_RETURN_TIME.count();
+      } else {
+        sim_stats.rd_bus_busy_ps += DRAM_DBUS_RETURN_TIME.count();
+      }
+
       if (iter_next_process->row_buffer_hit) {
         if (write_mode) {
           ++sim_stats.WQ_ROW_BUFFER_HIT;
@@ -293,6 +329,77 @@ long DRAM_CHANNEL::populate_dbus()
         sim_stats.dbus_cycle_congested += (dbus_cycle_available - current_time) / data_bus_period;
       }
       ++sim_stats.dbus_count_congested;
+    }
+  }
+
+  return progress;
+}
+
+// [CXLREPRO] duplex-mode bus population: each direction has its own bus slot and
+// availability clock. A bank request's direction is given by its packet's
+// is_write tag, so a request being transferred on one bus can never be picked
+// by the other. Bankgroup cooldown (device-internal media constraint) is shared
+// between directions, which naturally models a total-media ceiling below the
+// sum of both direction ceilings.
+long DRAM_CHANNEL::populate_dbus_duplex()
+{
+  long progress{0};
+
+  for (bool dir_write : {false, true}) {
+    auto& slot = dir_write ? active_request_wr : active_request;
+    auto& avail = dir_write ? dbus_cycle_available_wr : dbus_cycle_available;
+
+    auto dir_valid = [dir_write](const BANK_REQUEST& br) {
+      return br.valid && br.pkt->value().is_write == dir_write;
+    };
+    auto iter_next_process = std::min_element(std::begin(bank_request), std::end(bank_request), [&dir_valid](const auto& lhs, const auto& rhs) {
+      return !dir_valid(rhs) || (dir_valid(lhs) && lhs.ready_time < rhs.ready_time);
+    });
+
+    if (iter_next_process != std::end(bank_request) && dir_valid(*iter_next_process) && iter_next_process->ready_time <= current_time) {
+      if (slot == std::end(bank_request) && avail <= current_time) {
+        // This direction's bus is available: put the request on it
+        auto op_bankgroup = bankgroup_request_index(iter_next_process->pkt->value().address);
+        auto bankgroup_ready_time = bankgroup_readytime[op_bankgroup];
+
+        slot = iter_next_process;
+
+        if (bankgroup_ready_time > current_time) {
+          slot->ready_time = bankgroup_ready_time + DRAM_DBUS_RETURN_TIME;
+        } else {
+          slot->ready_time = current_time + DRAM_DBUS_RETURN_TIME;
+        }
+
+        bankgroup_readytime[op_bankgroup] = current_time + DRAM_DBUS_RETURN_TIME + DRAM_DBUS_BANKGROUP_STALL;
+
+        if (dir_write) {
+          sim_stats.wr_bus_busy_ps += DRAM_DBUS_RETURN_TIME.count();
+        } else {
+          sim_stats.rd_bus_busy_ps += DRAM_DBUS_RETURN_TIME.count();
+        }
+
+        if (iter_next_process->row_buffer_hit) {
+          if (dir_write) {
+            ++sim_stats.WQ_ROW_BUFFER_HIT;
+          } else {
+            ++sim_stats.RQ_ROW_BUFFER_HIT;
+          }
+        } else if (dir_write) {
+          ++sim_stats.WQ_ROW_BUFFER_MISS;
+        } else {
+          ++sim_stats.RQ_ROW_BUFFER_MISS;
+        }
+
+        ++progress;
+      } else {
+        // This direction's bus is congested
+        if (slot != std::end(bank_request)) {
+          sim_stats.dbus_cycle_congested += (slot->ready_time - current_time) / data_bus_period;
+        } else {
+          sim_stats.dbus_cycle_congested += (avail - current_time) / data_bus_period;
+        }
+        ++sim_stats.dbus_count_congested;
+      }
     }
   }
 
@@ -340,6 +447,29 @@ DRAM_CHANNEL::queue_type::iterator DRAM_CHANNEL::schedule_packet()
     iter_next_schedule = std::min_element(std::begin(RQ), std::end(RQ), next_schedule);
   }
   return (iter_next_schedule);
+}
+
+// [CXLREPRO] schedule from an explicit queue, independent of write_mode
+DRAM_CHANNEL::queue_type::iterator DRAM_CHANNEL::schedule_packet_from(bool from_wq)
+{
+  auto next_schedule = [this](const auto& lhs, const auto& rhs) {
+    if (!(rhs.has_value() && !rhs.value().scheduled)) {
+      return true;
+    }
+    if (!(lhs.has_value() && !lhs.value().scheduled)) {
+      return false;
+    }
+
+    auto lop_idx = this->bank_request_index(lhs.value().address);
+    auto rop_idx = this->bank_request_index(rhs.value().address);
+    auto rready = !this->bank_request[rop_idx].valid;
+    auto lready = !this->bank_request[lop_idx].valid;
+    return (rready == lready) ? lhs.value().ready_time <= rhs.value().ready_time : lready;
+  };
+  if (from_wq) {
+    return std::min_element(std::begin(WQ), std::end(WQ), next_schedule);
+  }
+  return std::min_element(std::begin(RQ), std::end(RQ), next_schedule);
 }
 
 long DRAM_CHANNEL::service_packet(DRAM_CHANNEL::queue_type::iterator pkt)
@@ -395,7 +525,7 @@ void MEMORY_CONTROLLER::begin_phase()
   std::size_t chan_idx = 0;
   for (auto& chan : channels) {
     DRAM_CHANNEL::stats_type new_stats;
-    new_stats.name = "Channel " + std::to_string(chan_idx++);
+    new_stats.name = channel_name_prefix + std::to_string(chan_idx++);
     chan.sim_stats = new_stats;
     chan.warmup = warmup;
   }
@@ -528,6 +658,7 @@ bool MEMORY_CONTROLLER::add_rq(const request_type& packet, champsim::channel* ul
     *rq_it = DRAM_CHANNEL::request_type{packet};
     rq_it->value().forward_checked = false;
     rq_it->value().scheduled = false;
+    rq_it->value().is_write = false; // [CXLREPRO]
     rq_it->value().ready_time = current_time;
     if (packet.response_requested)
       rq_it->value().to_return = {&ul->returned};
@@ -548,6 +679,7 @@ bool MEMORY_CONTROLLER::add_wq(const request_type& packet)
     *wq_it = DRAM_CHANNEL::request_type{packet};
     wq_it->value().forward_checked = false;
     wq_it->value().scheduled = false;
+    wq_it->value().is_write = true; // [CXLREPRO]
     wq_it->value().ready_time = current_time;
 
     return true;
@@ -600,6 +732,20 @@ unsigned long DRAM_ADDRESS_MAPPING::get_row(champsim::address address) const { r
 unsigned long DRAM_ADDRESS_MAPPING::get_column(champsim::address address) const
 {
   return std::get<SLICER_COLUMN_IDX>(address_slicer(address)).to<unsigned long>();
+}
+
+std::size_t MEMORY_CONTROLLER::pending_write_backlog() const
+{
+  std::size_t n = 0;
+  for (const auto* ul : queues) {
+    n += std::size(ul->WQ);
+  }
+  for (const auto& chan : channels) {
+    // a WQ entry stays occupied from insertion through bank scheduling and bus
+    // transfer until completion resets it, so WQ occupancy covers in-flight writes
+    n += static_cast<std::size_t>(std::count_if(std::begin(chan.WQ), std::end(chan.WQ), [](const auto& e) { return e.has_value(); }));
+  }
+  return n;
 }
 
 champsim::data::bytes MEMORY_CONTROLLER::size() const { return champsim::data::bytes{(1ll << address_mapping.address_slicer.bit_size())}; }

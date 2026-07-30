@@ -155,6 +155,10 @@ std::vector<std::string> champsim::plain_printer::format(DRAM_CHANNEL::stats_typ
   else
     lines.push_back(fmt::format("{} REFRESHES ISSUED: -", stats.name));
 
+  // [CXLREPRO] per-direction data-bus accounting
+  lines.push_back(fmt::format("{} RD_LINES: {:10} WR_LINES: {:10} RD_BUS_BUSY_ps: {:14} WR_BUS_BUSY_ps: {:14}", stats.name, stats.RD_LINES, stats.WR_LINES,
+                              stats.rd_bus_busy_ps, stats.wr_bus_busy_ps));
+
   return lines;
 }
 

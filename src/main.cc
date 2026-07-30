@@ -37,6 +37,8 @@
 
 #include "page_stat.h"
 
+#include "cxl_repro.h"
+
 namespace champsim
 {
 std::vector<phase_stats> main(environment& env, std::vector<phase_info>& phases, std::vector<tracereader>& traces);
@@ -137,11 +139,18 @@ int main(int argc, char** argv) // NOLINT(bugprone-exception-escape)
     std::cout << "feed and trace files are set" << std::endl;
   }
 
+  // [CXLREPRO] wire the far-memory controller into the NT-store bypass path
+  cxl_repro::far_mem() = &gen_environment.far_mem_view();
+  gen_environment.far_mem_view().channel_name_prefix = "FAR_CHANNEL_";
+  fmt::print("[CXLREPRO] store_policy: {}\n", cxl_repro::knobs().nt_store ? "nt" : "allocate");
+
   auto phase_stats = champsim::main(gen_environment, phases, traces);
 
   fmt::print("\nChampSim completed all CPUs\n\n");
 
   champsim::plain_printer{std::cout}.print(phase_stats);
+
+  cxl_repro::print_stats(); // [CXLREPRO]
 
   for (CACHE& cache : gen_environment.cache_view()) {
     cache.impl_prefetcher_final_stats();
