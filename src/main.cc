@@ -142,6 +142,13 @@ int main(int argc, char** argv) // NOLINT(bugprone-exception-escape)
   // [CXLREPRO] wire the far-memory controller into the NT-store bypass path
   cxl_repro::far_mem() = &gen_environment.far_mem_view();
   gen_environment.far_mem_view().channel_name_prefix = "FAR_CHANNEL_";
+  // [CXLTX] the transaction budget models a property of the CXL device, so it is armed on
+  // the far controller only. Zero leaves stock behavior untouched everywhere.
+  if (cxl_repro::knobs().tx_period_ps > 0) {
+    gen_environment.far_mem_view().set_tx_period(champsim::chrono::picoseconds{cxl_repro::knobs().tx_period_ps});
+    fmt::print("[CXLTX] far-link transaction budget: 1 line per {} ps ({:.1f} Mtx/s)\n", cxl_repro::knobs().tx_period_ps,
+               1.0e6 / static_cast<double>(cxl_repro::knobs().tx_period_ps));
+  }
   fmt::print("[CXLREPRO] store_policy: {}\n", cxl_repro::knobs().nt_store ? "nt" : "allocate");
 
   auto phase_stats = champsim::main(gen_environment, phases, traces);

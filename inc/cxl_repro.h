@@ -18,6 +18,17 @@
  *               bypass allocation and stream directly to the far WQ.
  *   CXL_ALLOC_POLICY = only_far (default) | first_touch | round_robin
  *     page placement policy override for VirtualMemory.
+ *   CXL_TX_PERIOD_PS = 0 (default, disabled) | <picoseconds>
+ *     Shared transaction-rate budget on the far link: at most one serviced line,
+ *     read or write, per this period. Models the measured downstream completion-rate
+ *     ceiling, which per-direction byte bandwidth does not capture.
+ *   CXL_TX_RATE_MTPS = <mega-transactions per second>
+ *     Convenience form; period_ps = 1e6 / rate. CXL_TX_PERIOD_PS wins if both are set.
+ *
+ * Calibration note. The device measures ~4.0e8 completions/s against an 18.4 GB/s read
+ * and 12.3 GB/s write ceiling. This model's far link is 3.2 GB/s per direction, a
+ * bandwidth scale of ~5.75x down, so the corresponding budget is ~7.0e7 tx/s, i.e.
+ * CXL_TX_PERIOD_PS=14286 (CXL_TX_RATE_MTPS=70).
  */
 
 #include <cstdint>
@@ -33,6 +44,7 @@ struct knobs_t {
                                   // heuristic. Saturated far-memory workloads legitimately run
                                   // below the stock 0.01; the true zero-progress deadlock
                                   // detector stays active regardless.
+  long tx_period_ps = 0;          // [CXLTX] 0 disables the shared transaction-rate budget
 };
 
 struct stats_t {

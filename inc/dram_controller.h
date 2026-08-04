@@ -152,6 +152,23 @@ struct DRAM_CHANNEL final : public champsim::operable {
   champsim::chrono::clock::time_point dbus_cycle_available{};
   champsim::chrono::clock::time_point dbus_cycle_available_wr{}; // [CXLREPRO] duplex mode only
 
+  // [CXLTX] Shared transaction-rate budget.
+  //
+  // Measured on green_m19 (Emerald Rapids + Montage CXL 1.1): the downstream CXL path
+  // saturates at ~4.0e8 completions/s while NEITHER byte direction exceeds 88% of its
+  // own ceiling. A model that bounds only per-direction bandwidth therefore cannot
+  // reproduce the platform's binding constraint, and in particular cannot reproduce the
+  // central result -- that eliding the fetch (which removes bytes but not the request)
+  // buys nothing, while a one-transaction path buys ~48%.
+  //
+  // One slot is consumed per serviced line, read or write alike. Directions alternate on
+  // grant so a shared budget cannot starve the write direction.
+  //
+  // tx_period == 0 disables the constraint and restores stock behavior exactly.
+  champsim::chrono::picoseconds tx_period{0};
+  champsim::chrono::clock::time_point tx_cycle_available{};
+  bool tx_prefer_write = false;
+
   std::size_t refresh_row = 0;
   champsim::chrono::clock::time_point last_refresh{};
   std::size_t DRAM_ROWS_PER_REFRESH;
@@ -212,6 +229,11 @@ class MEMORY_CONTROLLER : public champsim::operable
 public:
   // [CXLREPRO] public so the NT-store bypass path can enqueue writes directly
   bool add_wq(const request_type& packet);
+
+  // [CXLTX] arm the shared transaction-rate budget on every channel of this controller.
+  // period == 0 disables it. Only meaningful for a duplex (CXL) controller; the caller
+  // is responsible for applying it to the far controller only.
+  void set_tx_period(champsim::chrono::picoseconds period);
 
 private:
 

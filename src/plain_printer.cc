@@ -156,6 +156,10 @@ std::vector<std::string> champsim::plain_printer::format(DRAM_CHANNEL::stats_typ
     lines.push_back(fmt::format("{} REFRESHES ISSUED: -", stats.name));
 
   // [CXLREPRO] per-direction data-bus accounting
+  if (stats.tx_grants > 0) { // [CXLTX] armed only on the far controller; keeps baseline output identical
+    lines.push_back(fmt::format("{} TX_GRANTS: {:10} TX_STALL_EVENTS: {:10} TX_STALL_ps: {:14}", stats.name, stats.tx_grants,
+                                stats.tx_stall_events, stats.tx_stall_ps));
+  }
   lines.push_back(fmt::format("{} RD_LINES: {:10} WR_LINES: {:10} RD_BUS_BUSY_ps: {:14} WR_BUS_BUSY_ps: {:14}", stats.name, stats.RD_LINES, stats.WR_LINES,
                               stats.rd_bus_busy_ps, stats.wr_bus_busy_ps));
 

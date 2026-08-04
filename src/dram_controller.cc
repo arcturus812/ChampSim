@@ -41,6 +41,15 @@ MEMORY_CONTROLLER::MEMORY_CONTROLLER(champsim::chrono::picoseconds dbus_period, 
   }
 }
 
+// [CXLTX] arm the shared transaction-rate budget on every channel of this controller
+void MEMORY_CONTROLLER::set_tx_period(champsim::chrono::picoseconds period)
+{
+  for (auto& chan : channels) {
+    chan.tx_period = period;
+    chan.tx_cycle_available = champsim::chrono::clock::time_point{};
+  }
+}
+
 DRAM_CHANNEL::DRAM_CHANNEL(champsim::chrono::picoseconds dbus_period, champsim::chrono::picoseconds mc_period, std::size_t t_add, std::size_t t_rp, std::size_t t_rcd,
                            std::size_t t_cas, std::size_t t_ras, champsim::chrono::microseconds refresh_period, std::size_t refreshes_per_period,
                            champsim::data::bytes width, std::size_t rq_size, std::size_t wq_size, DRAM_ADDRESS_MAPPING addr_mapper, bool duplex_)
@@ -345,7 +354,9 @@ long DRAM_CHANNEL::populate_dbus_duplex()
 {
   long progress{0};
 
-  for (bool dir_write : {false, true}) {
+  // [CXLTX] Alternate which direction gets first refusal. With a shared transaction
+  // budget the first-served direction would otherwise win every contested slot.
+  for (bool dir_write : {tx_prefer_write, !tx_prefer_write}) {
     auto& slot = dir_write ? active_request_wr : active_request;
     auto& avail = dir_write ? dbus_cycle_available_wr : dbus_cycle_available;
 
@@ -355,6 +366,17 @@ long DRAM_CHANNEL::populate_dbus_duplex()
     auto iter_next_process = std::min_element(std::begin(bank_request), std::end(bank_request), [&dir_valid](const auto& lhs, const auto& rhs) {
       return !dir_valid(rhs) || (dir_valid(lhs) && lhs.ready_time < rhs.ready_time);
     });
+
+    // [CXLTX] A serviced line consumes one transaction slot regardless of direction.
+    const bool tx_budget_ok = (tx_period == champsim::chrono::picoseconds{0}) || (tx_cycle_available <= current_time);
+
+    if (iter_next_process != std::end(bank_request) && dir_valid(*iter_next_process) && iter_next_process->ready_time <= current_time && !tx_budget_ok) {
+      // The data bus may be free, but the shared transaction budget is not. Charge the
+      // wait here so it is attributable, and do not consume a bus slot.
+      ++sim_stats.tx_stall_events;
+      sim_stats.tx_stall_ps += (tx_cycle_available - current_time).count();
+      continue;
+    }
 
     if (iter_next_process != std::end(bank_request) && dir_valid(*iter_next_process) && iter_next_process->ready_time <= current_time) {
       if (slot == std::end(bank_request) && avail <= current_time) {
@@ -371,6 +393,13 @@ long DRAM_CHANNEL::populate_dbus_duplex()
         }
 
         bankgroup_readytime[op_bankgroup] = current_time + DRAM_DBUS_RETURN_TIME + DRAM_DBUS_BANKGROUP_STALL;
+
+        // [CXLTX] consume the shared transaction slot and hand priority to the other direction
+        if (tx_period != champsim::chrono::picoseconds{0}) {
+          tx_cycle_available = current_time + tx_period;
+          ++sim_stats.tx_grants;
+          tx_prefer_write = !dir_write;
+        }
 
         if (dir_write) {
           sim_stats.wr_bus_busy_ps += DRAM_DBUS_RETURN_TIME.count();
