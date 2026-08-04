@@ -1,0 +1,74 @@
+[wave1] 28 baseline runs (budget off)
+[run] wrf_alloc_off          rc=0
+[run] roms_alloc_off         rc=0
+[run] cactu_alloc_off        rc=0
+[run] wrf_nt_off             rc=0
+[run] cactu_nt_off           rc=0
+[run] roms_nt_off            rc=0
+[run] lbm_alloc_off          rc=0
+[run] lbm_nt_off             rc=0
+[run] omnetpp_alloc_off      rc=0
+[run] omnetpp_nt_off         rc=0
+[run] fotonik_alloc_off      rc=0
+[run] fotonik_nt_off         rc=0
+[run] bfs3_alloc_off         rc=0
+[run] bfs3_nt_off            rc=0
+[run] xalanc_alloc_off       rc=0
+[run] sssp3_alloc_off        rc=0
+[run] sssp3_nt_off           rc=0
+[run] mcf_alloc_off          rc=0
+[run] mcf_nt_off             rc=0
+[run] pr3_alloc_off          rc=0
+[run] pr3_nt_off             rc=0
+[run] xalanc_nt_off          rc=0
+[run] cc5_alloc_off          rc=0
+[run] cc5_nt_off             rc=0
+[run] gcc_nt_off             rc=0
+[run] gcc_alloc_off          rc=0
+[run] bc0_alloc_off          rc=0
+[run] bc0_nt_off             rc=0
+[plan] bc0      alloc 1.163e+07 nt 1.273e+07 lines/s -> period 214915 ps
+[plan] bfs3     alloc 6.083e+06 nt 7.072e+06 lines/s -> period 410995 ps
+[plan] cc5      alloc 6.025e+06 nt 5.761e+06 lines/s -> period 433967 ps
+[plan] pr3      alloc 9.593e+06 nt 9.146e+06 lines/s -> period 273351 ps
+[plan] sssp3    alloc 7.136e+06 nt 9.787e+06 lines/s -> period 350312 ps
+[plan] gcc      alloc 3.216e+06 nt 3.215e+06 lines/s -> period 777508 ps
+[plan] mcf      alloc 4.049e+06 nt 4.930e+06 lines/s -> period 617443 ps
+[plan] cactu    alloc 8.313e+06 nt 1.792e+07 lines/s -> period 300741 ps
+[plan] lbm      alloc 5.364e+07 nt 5.370e+07 lines/s -> period 46605 ps
+[plan] omnetpp  alloc 6.265e+06 nt 7.252e+06 lines/s -> period 399030 ps
+[plan] wrf      alloc 3.866e+05 nt 9.056e+05 lines/s -> period 6465893 ps
+[plan] xalanc   alloc 5.764e+06 nt 5.812e+06 lines/s -> period 433728 ps
+[plan] fotonik  alloc 1.256e+07 nt 1.256e+07 lines/s -> period 199041 ps
+[plan] roms     alloc 3.002e+06 nt 6.146e+06 lines/s -> period 832744 ps
+[wave2] 28 binding runs
+[run] wrf_alloc_bind         rc=0
+[run] cactu_alloc_bind       rc=0
+[run] roms_alloc_bind        rc=0
+[run] cactu_nt_bind          rc=0
+[run] wrf_nt_bind            rc=0
+[run] roms_nt_bind           rc=0
+[run] lbm_alloc_bind         rc=0
+[run] lbm_nt_bind            rc=0
+[run] omnetpp_alloc_bind     rc=0
+[run] fotonik_alloc_bind     rc=0
+[run] omnetpp_nt_bind        rc=0
+[run] fotonik_nt_bind        rc=0
+[run] bfs3_nt_bind           rc=0
+[run] bfs3_alloc_bind        rc=0
+[run] xalanc_alloc_bind      rc=0
+[run] sssp3_alloc_bind       rc=0
+[run] mcf_alloc_bind         rc=0
+[run] xalanc_nt_bind         rc=0
+[run] mcf_nt_bind            rc=0
+[run] pr3_alloc_bind         rc=0
+[run] cc5_nt_bind            rc=0
+[run] gcc_nt_bind            rc=0
+[run] gcc_alloc_bind         rc=0
+[run] pr3_nt_bind            rc=0
+[run] cc5_alloc_bind         rc=0
+[run] sssp3_nt_bind          rc=0
+[run] bc0_alloc_bind         rc=0
+[run] bc0_nt_bind            rc=0
+RUN_DONE
+CHAIN_DONE
