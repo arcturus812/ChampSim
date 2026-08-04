@@ -76,8 +76,8 @@ Simulation CPU 0 critical: IPC 0.013281 < 0.02
 *** Reached end of trace: (0, "/home/hwpark/workspace/CAL/ChampSim/script/cxl_repro/traces/small.champsim.gz")
 Simulation CPU 0 critical: IPC 0.013283 < 0.02
 *** Reached end of trace: (0, "/home/hwpark/workspace/CAL/ChampSim/script/cxl_repro/traces/small.champsim.gz")
-Simulation finished CPU 0 instructions: 1500000 cycles: 112941331 cumulative IPC: 0.01328 (Simulation time: 00 hr 14 min 35 sec)
-Simulation complete CPU 0 instructions: 1500000 cycles: 112941331 cumulative IPC: 0.01328 (Simulation time: 00 hr 14 min 35 sec)
+Simulation finished CPU 0 instructions: 1500000 cycles: 112941331 cumulative IPC: 0.01328 (Simulation time: 00 hr 14 min 51 sec)
+Simulation complete CPU 0 instructions: 1500000 cycles: 112941331 cumulative IPC: 0.01328 (Simulation time: 00 hr 14 min 51 sec)
 
 ChampSim completed all CPUs
 
@@ -186,4 +186,5 @@ CXLREPRO far_rfo_fetches:              0
 CXLREPRO far_demand_reads:             0
 CXLREPRO far_prefetch_reads:           0
 CXLREPRO far_writebacks:               0
+CXLTX tx_period_ps:                    0
 CXLREPRO far_wq_backlog:              64

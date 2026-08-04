@@ -22,8 +22,8 @@ Simulation CPU 0 warning: IPC 0.03324 < 0.05
 Simulation CPU 0 warning: IPC 0.032955 < 0.05
 *** Reached end of trace: (0, "/home/hwpark/workspace/CAL/ChampSim/script/cxl_repro/traces/clash.champsim.gz")
 Simulation CPU 0 warning: IPC 0.033116 < 0.05
-Simulation finished CPU 0 instructions: 1500002 cycles: 45236993 cumulative IPC: 0.03316 (Simulation time: 00 hr 06 min 03 sec)
-Simulation complete CPU 0 instructions: 1500002 cycles: 45236993 cumulative IPC: 0.03316 (Simulation time: 00 hr 06 min 03 sec)
+Simulation finished CPU 0 instructions: 1500002 cycles: 45236993 cumulative IPC: 0.03316 (Simulation time: 00 hr 06 min 14 sec)
+Simulation complete CPU 0 instructions: 1500002 cycles: 45236993 cumulative IPC: 0.03316 (Simulation time: 00 hr 06 min 14 sec)
 
 ChampSim completed all CPUs
 
@@ -132,4 +132,5 @@ CXLREPRO far_rfo_fetches:              0
 CXLREPRO far_demand_reads:        500021
 CXLREPRO far_prefetch_reads:           0
 CXLREPRO far_writebacks:          500002
+CXLTX tx_period_ps:                    0
 CXLREPRO far_wq_backlog:              45

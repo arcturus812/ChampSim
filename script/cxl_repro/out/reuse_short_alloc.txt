@@ -12,8 +12,8 @@ Page size: 4096
 [CXLREPRO] store_policy: allocate
 Off-chip DRAM Size: 4 GiB Channels: 1 Width: 64-bit Data Rate: 3205 MT/s
 Off-chip DRAM Size: 4 GiB Channels: 1 Width: 16-bit Data Rate: 1600 MT/s
-Warmup finished CPU 0 instructions: 300000 cycles: 2085548 cumulative IPC: 0.1438 (Simulation time: 00 hr 00 min 17 sec)
-Warmup complete CPU 0 instructions: 300000 cycles: 2085548 cumulative IPC: 0.1438 (Simulation time: 00 hr 00 min 17 sec)
+Warmup finished CPU 0 instructions: 300000 cycles: 2085548 cumulative IPC: 0.1438 (Simulation time: 00 hr 00 min 18 sec)
+Warmup complete CPU 0 instructions: 300000 cycles: 2085548 cumulative IPC: 0.1438 (Simulation time: 00 hr 00 min 18 sec)
 Simulation CPU 0 critical: IPC 0.012433 < 0.02
 Simulation CPU 0 critical: IPC 0.012369 < 0.02
 Simulation CPU 0 critical: IPC 0.012396 < 0.02
@@ -27,8 +27,8 @@ Simulation CPU 0 critical: IPC 0.012352 < 0.02
 Simulation CPU 0 critical: IPC 0.012326 < 0.02
 Simulation CPU 0 critical: IPC 0.012327 < 0.02
 Simulation CPU 0 critical: IPC 0.012366 < 0.02
-Simulation finished CPU 0 instructions: 1500000 cycles: 121151858 cumulative IPC: 0.01238 (Simulation time: 00 hr 18 min 40 sec)
-Simulation complete CPU 0 instructions: 1500000 cycles: 121151858 cumulative IPC: 0.01238 (Simulation time: 00 hr 18 min 40 sec)
+Simulation finished CPU 0 instructions: 1500000 cycles: 121151858 cumulative IPC: 0.01238 (Simulation time: 00 hr 19 min 16 sec)
+Simulation complete CPU 0 instructions: 1500000 cycles: 121151858 cumulative IPC: 0.01238 (Simulation time: 00 hr 19 min 16 sec)
 
 ChampSim completed all CPUs
 
@@ -137,4 +137,5 @@ CXLREPRO far_rfo_fetches:        1411812
 CXLREPRO far_demand_reads:             0
 CXLREPRO far_prefetch_reads:           0
 CXLREPRO far_writebacks:         1411744
+CXLTX tx_period_ps:                    0
 CXLREPRO far_wq_backlog:           85153

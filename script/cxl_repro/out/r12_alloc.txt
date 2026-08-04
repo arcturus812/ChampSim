@@ -26,8 +26,8 @@ Simulation CPU 0 critical: IPC 0.013073 < 0.02
 Simulation CPU 0 critical: IPC 0.013065 < 0.02
 Simulation CPU 0 critical: IPC 0.013067 < 0.02
 Simulation CPU 0 critical: IPC 0.013076 < 0.02
-Simulation finished CPU 0 instructions: 1500004 cycles: 115034667 cumulative IPC: 0.01304 (Simulation time: 00 hr 16 min 46 sec)
-Simulation complete CPU 0 instructions: 1500004 cycles: 115034667 cumulative IPC: 0.01304 (Simulation time: 00 hr 16 min 46 sec)
+Simulation finished CPU 0 instructions: 1500004 cycles: 115034667 cumulative IPC: 0.01304 (Simulation time: 00 hr 17 min 10 sec)
+Simulation complete CPU 0 instructions: 1500004 cycles: 115034667 cumulative IPC: 0.01304 (Simulation time: 00 hr 17 min 10 sec)
 
 ChampSim completed all CPUs
 
@@ -136,4 +136,5 @@ CXLREPRO far_rfo_fetches:         352936
 CXLREPRO far_demand_reads:       1058853
 CXLREPRO far_prefetch_reads:           0
 CXLREPRO far_writebacks:          352927
+CXLTX tx_period_ps:                    0
 CXLREPRO far_wq_backlog:               9
