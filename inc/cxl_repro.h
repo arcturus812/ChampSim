@@ -39,6 +39,10 @@ namespace cxl_repro
 {
 struct knobs_t {
   bool nt_store = false;          // CXL_STORE_POLICY == "nt"
+  bool elide_store = false;       // [CXLELIDE] CXL_STORE_POLICY == "elide": local ownership
+                                  // completion -- a store's ownership fetch to far memory is
+                                  // granted at the LLC without a far transaction; the write
+                                  // (writeback) is the only thing that crosses the link
   int alloc_policy = -1;          // -1: keep branch default; else VirtualMemory policy index
   double livelock_die_ipc = 0.01; // CXL_LIVELOCK_IPC: die threshold of the branch's livelock
                                   // heuristic. Saturated far-memory workloads legitimately run
@@ -56,6 +60,7 @@ struct stats_t {
   uint64_t far_demand_reads = 0;   // LOAD/TRANSLATION demand reads
   uint64_t far_prefetch_reads = 0; // prefetch reads
   uint64_t far_writebacks = 0;     // writeback lines to far WQ
+  uint64_t elided_grants = 0;      // [CXLELIDE] far RFOs completed locally (no far transaction)
 };
 
 knobs_t& knobs();

@@ -465,6 +465,21 @@ bool CACHE::handle_miss(const tag_lookup_type& handle_pkt)
     bool success = false;
     if(this->NAME == "LLC"){
       if(::is_far_addr(mshr_pkt.second.address.to<uint64_t>())){
+        // [CXLELIDE] local ownership completion: on a host-only-coherent range the
+        // device holds no copy, so a store's ownership fetch can be granted at the
+        // coherence point without any far transaction. The line fills with write
+        // permission at fill latency (the same promise pattern handle_write uses);
+        // only the eventual writeback crosses the link. Loads and prefetches fetch
+        // as before (the full-line-store assumption is stated in the docs).
+        if (cxl_repro::knobs().elide_store && mshr_pkt.second.type == access_type::RFO && send_to_rq) {
+          ++cxl_repro::stats().elided_grants;
+          mshr_pkt.first.data_promise.ready_at(current_time + (warmup ? champsim::chrono::clock::duration{} : FILL_LATENCY));
+          if (mshr_pkt.second.response_requested) {
+            MSHR.emplace_back(std::move(mshr_pkt.first));
+          }
+          sim_stats.misses.increment(std::pair{handle_pkt.type, handle_pkt.cpu});
+          return true;
+        }
         if(send_to_rq){
           success = lower_level_far->add_rq(mshr_pkt.second);
         }else{

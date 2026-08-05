@@ -16,6 +16,8 @@ knobs_t parse_knobs()
   if (const char* env = std::getenv("CXL_STORE_POLICY"); env != nullptr) {
     if (std::strcmp(env, "nt") == 0) {
       k.nt_store = true;
+    } else if (std::strcmp(env, "elide") == 0) {
+      k.elide_store = true; // [CXLELIDE]
     } else if (std::strcmp(env, "allocate") != 0) {
       fmt::print("[CXLREPRO] WARNING: unknown CXL_STORE_POLICY '{}', using 'allocate'\n", env);
     }
@@ -78,7 +80,7 @@ void print_stats()
 {
   const auto& s = stats();
   fmt::print("\n=== CXLREPRO Statistics (simulation phase) ===\n");
-  fmt::print("CXLREPRO store_policy: {}\n", knobs().nt_store ? "nt" : "allocate");
+  fmt::print("CXLREPRO store_policy: {}\n", knobs().nt_store ? "nt" : (knobs().elide_store ? "elide" : "allocate"));
   fmt::print("CXLREPRO nt_bypass_lines:   {:12}\n", s.nt_bypass_lines);
   fmt::print("CXLREPRO nt_bypass_retry:   {:12}\n", s.nt_bypass_retry);
   fmt::print("CXLREPRO far_rfo_fetches:   {:12}\n", s.far_rfo_fetches);
@@ -86,6 +88,9 @@ void print_stats()
   fmt::print("CXLREPRO far_prefetch_reads:{:12}\n", s.far_prefetch_reads);
   fmt::print("CXLREPRO far_writebacks:    {:12}\n", s.far_writebacks);
   fmt::print("CXLTX tx_period_ps:         {:12}\n", knobs().tx_period_ps);
+  if (knobs().elide_store) { // [CXLELIDE] printed only when armed: baseline output stays identical
+    fmt::print("CXLELIDE elided_grants:     {:12}\n", s.elided_grants);
+  }
   if (far_mem() != nullptr) {
     fmt::print("CXLREPRO far_wq_backlog:    {:12}\n", far_mem()->pending_write_backlog());
   }
