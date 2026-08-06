@@ -72,7 +72,7 @@ def run_one(name, trace, policy, period_ps):
         p = subprocess.run(
             [rv.BIN, '--warmup-instructions', str(WARMUP),
              '--simulation-instructions', str(SIM), os.path.join(TR, trace)],
-            env=env, stdout=f, stderr=subprocess.STDOUT, timeout=4 * 3600)
+            env=env, stdout=f, stderr=subprocess.STDOUT)
     return name, p.returncode
 
 

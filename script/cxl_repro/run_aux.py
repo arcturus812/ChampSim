@@ -65,11 +65,15 @@ def run_one(name, trace_path, policy, period_ps, warmup, sim):
         env['CXL_TX_PERIOD_PS'] = str(period_ps)
     else:
         env.pop('CXL_TX_PERIOD_PS', None)
+    # No wall-clock timeout. A run under a binding budget is legitimately slow --
+    # the modelled machine is throttled, so the same instruction count costs more
+    # cycles to simulate, and a 20% budget costs roughly five times a 40% one. A
+    # timeout here does not catch a bug, it throws away hours of finished work.
     with open(os.path.join(OUT, name + '.txt'), 'w') as f:
         p = subprocess.run(
             ['nice', '-n', str(NICE), rv.BIN, '--warmup-instructions', str(warmup),
              '--simulation-instructions', str(sim), trace_path],
-            env=env, stdout=f, stderr=subprocess.STDOUT, timeout=10 * 3600)
+            env=env, stdout=f, stderr=subprocess.STDOUT)
     return name, p.returncode
 
 

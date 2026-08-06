@@ -73,7 +73,6 @@ BUDGET_PS = int(os.environ.get('MC_BUDGET_PS', '11991' if ASYM else '14375'))
 WARMUP = int(os.environ.get('MC_WARMUP', '2000000'))
 SIM = int(os.environ.get('MC_SIM', '5000000'))
 WORKERS = int(os.environ.get('MC_WORKERS', '24'))
-TIMEOUT_S = int(os.environ.get('MC_TIMEOUT_S', str(12 * 3600)))
 BIN = os.path.join(ROOT, 'bin', ('champsim_cxl_asym%d' if ASYM else 'champsim_cxl_mc%d') % CORES)
 
 # Traces: the same set as the single-core campaign, so the two are comparable.
@@ -105,15 +104,16 @@ def run_one(name, trace_rel, policy, period_ps):
     else:
         env.pop('CXL_TX_PERIOD_PS', None)
     path = os.path.join(TR, trace_rel)
-    try:
-        with open(os.path.join(OUT, name + '.txt'), 'w') as f:
-            p = subprocess.run(
-                [BIN, '--warmup-instructions', str(WARMUP),
-                 '--simulation-instructions', str(SIM)] + [path] * CORES,
-                env=env, stdout=f, stderr=subprocess.STDOUT, timeout=TIMEOUT_S)
-        return name, p.returncode
-    except subprocess.TimeoutExpired:
-        return name, -9
+    # No wall-clock timeout. A run under a binding budget is legitimately slow --
+    # the modelled machine is throttled, so the same instruction count costs more
+    # cycles to simulate, and a 20% budget costs roughly five times a 40% one. A
+    # timeout here does not catch a bug, it throws away hours of finished work.
+    with open(os.path.join(OUT, name + '.txt'), 'w') as f:
+        p = subprocess.run(
+            [BIN, '--warmup-instructions', str(WARMUP),
+             '--simulation-instructions', str(SIM)] + [path] * CORES,
+            env=env, stdout=f, stderr=subprocess.STDOUT)
+    return name, p.returncode
 
 
 def stats(name):

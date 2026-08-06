@@ -29,7 +29,6 @@ TR = '/home/hwpark/workspace/storage/trace/champsim'
 WARMUP = 10_000_000
 SIM = 50_000_000
 BIND_FRAC = 0.40
-TIMEOUT_S = int(os.environ.get('SOL_TIMEOUT_S', str(6 * 3600)))
 WORKERS = 24
 POLICIES = ['allocate', 'nt', 'elide']
 
@@ -71,17 +70,16 @@ def run_one(name, trace, policy, period_ps):
         env['CXL_TX_PERIOD_PS'] = str(period_ps)
     else:
         env.pop('CXL_TX_PERIOD_PS', None)
-    try:
-        with open(os.path.join(OUT, name + '.txt'), 'w') as f:
-            p = subprocess.run(
-                [rv.BIN, '--warmup-instructions', str(WARMUP),
-                 '--simulation-instructions', str(SIM), os.path.join(TR, trace)],
-                env=env, stdout=f, stderr=subprocess.STDOUT, timeout=TIMEOUT_S)
-        return name, p.returncode
-    except subprocess.TimeoutExpired:
-        # A run that exceeds the time budget is excluded and reported as such;
-        # it must not take the campaign down with it.
-        return name, -9
+    # No wall-clock timeout. A run under a binding budget is legitimately slow --
+    # the modelled machine is throttled, so the same instruction count costs more
+    # cycles to simulate, and a 20% budget costs roughly five times a 40% one. A
+    # timeout here does not catch a bug, it throws away hours of finished work.
+    with open(os.path.join(OUT, name + '.txt'), 'w') as f:
+        p = subprocess.run(
+            [rv.BIN, '--warmup-instructions', str(WARMUP),
+             '--simulation-instructions', str(SIM), os.path.join(TR, trace)],
+            env=env, stdout=f, stderr=subprocess.STDOUT)
+    return name, p.returncode
 
 
 def stats(name):
