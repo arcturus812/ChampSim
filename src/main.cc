@@ -149,7 +149,14 @@ int main(int argc, char** argv) // NOLINT(bugprone-exception-escape)
     fmt::print("[CXLTX] far-link transaction budget: 1 line per {} ps ({:.1f} Mtx/s)\n", cxl_repro::knobs().tx_period_ps,
                1.0e6 / static_cast<double>(cxl_repro::knobs().tx_period_ps));
   }
-  fmt::print("[CXLREPRO] store_policy: {}\n", cxl_repro::knobs().nt_store ? "nt" : "allocate");
+  // [CXLASYM] the device's directions are not equally wide; this is a property of the far
+  // link alone, so like the budget it is armed only there.
+  if (cxl_repro::knobs().wr_bus_ratio > 1.0) {
+    gen_environment.far_mem_view().set_wr_bus_ratio(cxl_repro::knobs().wr_bus_ratio);
+    fmt::print("[CXLASYM] far write direction slowed {:.4f}x relative to read\n", cxl_repro::knobs().wr_bus_ratio);
+  }
+  fmt::print("[CXLREPRO] store_policy: {}\n",
+             cxl_repro::knobs().nt_store ? "nt" : (cxl_repro::knobs().elide_store ? "elide" : "allocate"));
 
   auto phase_stats = champsim::main(gen_environment, phases, traces);
 

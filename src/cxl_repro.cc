@@ -41,6 +41,15 @@ knobs_t parse_knobs()
       k.tx_period_ps = 0;
     }
   }
+  // [CXLASYM] far-link direction asymmetry, e.g. 1.4959 for the device's 18.4:12.3
+  if (const char* env = std::getenv("CXL_WR_BUS_RATIO"); env != nullptr) {
+    const double ratio = std::atof(env);
+    if (ratio >= 1.0) {
+      k.wr_bus_ratio = ratio;
+    } else {
+      fmt::print("[CXLASYM] WARNING: CXL_WR_BUS_RATIO '{}' is below 1.0, link stays symmetric\n", env);
+    }
+  }
   if (const char* env = std::getenv("CXL_ALLOC_POLICY"); env != nullptr) {
     if (std::strcmp(env, "first_touch") == 0) {
       k.alloc_policy = 0;
@@ -88,6 +97,9 @@ void print_stats()
   fmt::print("CXLREPRO far_prefetch_reads:{:12}\n", s.far_prefetch_reads);
   fmt::print("CXLREPRO far_writebacks:    {:12}\n", s.far_writebacks);
   fmt::print("CXLTX tx_period_ps:         {:12}\n", knobs().tx_period_ps);
+  if (knobs().wr_bus_ratio > 1.0) { // [CXLASYM] printed only when armed
+    fmt::print("CXLASYM wr_bus_ratio:       {:12.4f}\n", knobs().wr_bus_ratio);
+  }
   if (knobs().elide_store) { // [CXLELIDE] printed only when armed: baseline output stays identical
     fmt::print("CXLELIDE elided_grants:     {:12}\n", s.elided_grants);
   }

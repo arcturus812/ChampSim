@@ -50,6 +50,17 @@ void MEMORY_CONTROLLER::set_tx_period(champsim::chrono::picoseconds period)
   }
 }
 
+// [CXLASYM] Slow the write direction relative to the read direction. ratio <= 1.0 restores
+// the symmetric channel exactly.
+void MEMORY_CONTROLLER::set_wr_bus_ratio(double ratio)
+{
+  for (auto& chan : channels) {
+    chan.wr_bus_ratio = (ratio > 1.0) ? ratio : 1.0;
+    chan.dbus_return_time_wr = std::chrono::duration_cast<champsim::chrono::clock::duration>(
+        chan.DRAM_DBUS_RETURN_TIME * chan.wr_bus_ratio);
+  }
+}
+
 DRAM_CHANNEL::DRAM_CHANNEL(champsim::chrono::picoseconds dbus_period, champsim::chrono::picoseconds mc_period, std::size_t t_add, std::size_t t_rp, std::size_t t_rcd,
                            std::size_t t_cas, std::size_t t_ras, champsim::chrono::microseconds refresh_period, std::size_t refreshes_per_period,
                            champsim::data::bytes width, std::size_t rq_size, std::size_t wq_size, DRAM_ADDRESS_MAPPING addr_mapper, bool duplex_)
@@ -66,6 +77,7 @@ DRAM_CHANNEL::DRAM_CHANNEL(champsim::chrono::picoseconds dbus_period, champsim::
       tADD(t_add * mc_period),
       duplex(duplex_)
 {
+  dbus_return_time_wr = DRAM_DBUS_RETURN_TIME; // [CXLASYM] symmetric until told otherwise
   request_array_type br(address_mapping.ranks() * address_mapping.banks() * address_mapping.bankgroups());
   bank_request = br;
   active_request = std::end(bank_request);
@@ -386,13 +398,16 @@ long DRAM_CHANNEL::populate_dbus_duplex()
 
         slot = iter_next_process;
 
+        // [CXLASYM] the write direction may transfer a line more slowly than the read one
+        const auto return_time = dir_write ? dbus_return_time_wr : DRAM_DBUS_RETURN_TIME;
+
         if (bankgroup_ready_time > current_time) {
-          slot->ready_time = bankgroup_ready_time + DRAM_DBUS_RETURN_TIME;
+          slot->ready_time = bankgroup_ready_time + return_time;
         } else {
-          slot->ready_time = current_time + DRAM_DBUS_RETURN_TIME;
+          slot->ready_time = current_time + return_time;
         }
 
-        bankgroup_readytime[op_bankgroup] = current_time + DRAM_DBUS_RETURN_TIME + DRAM_DBUS_BANKGROUP_STALL;
+        bankgroup_readytime[op_bankgroup] = current_time + return_time + DRAM_DBUS_BANKGROUP_STALL;
 
         // [CXLTX] consume the shared transaction slot and hand priority to the other direction
         if (tx_period != champsim::chrono::picoseconds{0}) {
@@ -402,9 +417,9 @@ long DRAM_CHANNEL::populate_dbus_duplex()
         }
 
         if (dir_write) {
-          sim_stats.wr_bus_busy_ps += DRAM_DBUS_RETURN_TIME.count();
+          sim_stats.wr_bus_busy_ps += return_time.count();
         } else {
-          sim_stats.rd_bus_busy_ps += DRAM_DBUS_RETURN_TIME.count();
+          sim_stats.rd_bus_busy_ps += return_time.count();
         }
 
         if (iter_next_process->row_buffer_hit) {

@@ -29,6 +29,7 @@ TR = '/home/hwpark/workspace/storage/trace/champsim'
 WARMUP = 10_000_000
 SIM = 50_000_000
 BIND_FRAC = 0.40
+TIMEOUT_S = int(os.environ.get('SOL_TIMEOUT_S', str(6 * 3600)))
 WORKERS = 24
 POLICIES = ['allocate', 'nt', 'elide']
 
@@ -53,19 +54,34 @@ TRACES = {
 }
 
 
+def already_done(name):
+    p = os.path.join(OUT, name + '.txt')
+    if not os.path.exists(p):
+        return False
+    with open(p) as f:
+        return 'ChampSim completed all CPUs' in f.read()
+
+
 def run_one(name, trace, policy, period_ps):
+    if already_done(name):
+        return name, 0
     env = dict(os.environ, CXL_STORE_POLICY=policy, CXL_ALLOC_POLICY='only_far',
                CXL_LIVELOCK_IPC='0.0001')
     if period_ps:
         env['CXL_TX_PERIOD_PS'] = str(period_ps)
     else:
         env.pop('CXL_TX_PERIOD_PS', None)
-    with open(os.path.join(OUT, name + '.txt'), 'w') as f:
-        p = subprocess.run(
-            [rv.BIN, '--warmup-instructions', str(WARMUP),
-             '--simulation-instructions', str(SIM), os.path.join(TR, trace)],
-            env=env, stdout=f, stderr=subprocess.STDOUT, timeout=8 * 3600)
-    return name, p.returncode
+    try:
+        with open(os.path.join(OUT, name + '.txt'), 'w') as f:
+            p = subprocess.run(
+                [rv.BIN, '--warmup-instructions', str(WARMUP),
+                 '--simulation-instructions', str(SIM), os.path.join(TR, trace)],
+                env=env, stdout=f, stderr=subprocess.STDOUT, timeout=TIMEOUT_S)
+        return name, p.returncode
+    except subprocess.TimeoutExpired:
+        # A run that exceeds the time budget is excluded and reported as such;
+        # it must not take the campaign down with it.
+        return name, -9
 
 
 def stats(name):
@@ -86,31 +102,67 @@ def stats(name):
 
 def wave(jobs):
     with cf.ThreadPoolExecutor(max_workers=WORKERS) as ex:
-        for fu in cf.as_completed({ex.submit(run_one, *j) for j in jobs}):
-            print('[run] %-24s rc=%d' % fu.result(), flush=True)
+        futs = {ex.submit(run_one, *j): j[0] for j in jobs}
+        for fu in cf.as_completed(futs):
+            try:
+                print('[run] %-24s rc=%d' % fu.result(), flush=True)
+            except Exception as e:
+                print('[run] %-24s EXC %s' % (futs[fu], e), flush=True)
+
+
+def budget_for(k):
+    """A trace's budget depends only on that trace's own baselines."""
+    rates = []
+    for p in POLICIES:
+        try:
+            st = stats('%s_%s_off' % (k, p))
+        except FileNotFoundError:
+            return None
+        if st.get('line_rate'):
+            rates.append(st['line_rate'])
+    if len(rates) < len(POLICIES):
+        return None
+    return max(1, int(round(1e12 / (BIND_FRAC * min(rates)))))
+
+
+def _policies_concurrently(names_args):
+    with cf.ThreadPoolExecutor(max_workers=len(POLICIES)) as ex:
+        for fu in cf.as_completed({ex.submit(run_one, *a) for a in names_args}):
+            try:
+                print('[run] %-24s rc=%d' % fu.result(), flush=True)
+            except Exception as e:
+                print('[run] EXC %s' % e, flush=True)
+
+
+def do_trace(k, trace):
+    """Baselines then binding runs for one trace -- no cross-trace barrier, so a
+    slow trace delays only itself. The three policies run concurrently within
+    each stage, so the pool width is (traces in flight) x 3."""
+    _policies_concurrently([('%s_%s_off' % (k, p), trace, p, 0) for p in POLICIES])
+    b = budget_for(k)
+    if b is None:
+        print('[plan] %-8s SKIP (incomplete baselines)' % k, flush=True)
+        return k, None
+    print('[plan] %-8s period %d ps' % (k, b), flush=True)
+    _policies_concurrently([('%s_%s_bind' % (k, p), trace, p, b) for p in POLICIES])
+    return k, b
 
 
 def do_run():
-    print('[wave1] %d baseline runs (budget off)' % (len(POLICIES) * len(TRACES)), flush=True)
-    wave([('%s_%s_off' % (k, p), t, p, 0) for k, t in TRACES.items() for p in POLICIES])
-
+    print('[campaign] %d traces x %d policies x 2 modes, pipelined per trace'
+          % (len(TRACES), len(POLICIES)), flush=True)
     budgets = {}
-    for k in TRACES:
-        rates = []
-        for p in POLICIES:
-            s = stats('%s_%s_off' % (k, p))
-            if s.get('line_rate'):
-                rates.append(s['line_rate'])
-        if len(rates) < len(POLICIES):
-            print('[plan] %-8s SKIP (missing baseline)' % k, flush=True)
-            continue
-        budgets[k] = max(1, int(round(1e12 / (BIND_FRAC * min(rates)))))
-        print('[plan] %-8s min %.3e lines/s -> period %d ps' % (k, min(rates), budgets[k]),
-              flush=True)
+    with cf.ThreadPoolExecutor(max_workers=max(1, WORKERS // len(POLICIES))) as ex:
+        futs = {ex.submit(do_trace, k, t): k for k, t in TRACES.items()}
+        for fu in cf.as_completed(futs):
+            try:
+                k, b = fu.result()
+                if b:
+                    budgets[k] = b
+            except Exception as e:
+                print('[campaign] %-8s EXC %s' % (futs[fu], e), flush=True)
+            json.dump(budgets, open(PLAN, 'w'), indent=1)
     json.dump(budgets, open(PLAN, 'w'), indent=1)
-
-    print('[wave2] %d binding runs' % (len(POLICIES) * len(budgets)), flush=True)
-    wave([('%s_%s_bind' % (k, p), TRACES[k], p, budgets[k]) for k in budgets for p in POLICIES])
     print('RUN_DONE', flush=True)
 
 

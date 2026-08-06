@@ -49,6 +49,8 @@ struct knobs_t {
                                   // below the stock 0.01; the true zero-progress deadlock
                                   // detector stays active regardless.
   long tx_period_ps = 0;          // [CXLTX] 0 disables the shared transaction-rate budget
+  double wr_bus_ratio = 1.0;      // [CXLASYM] far write direction slowed by this factor;
+                                  // 1.0 = stock symmetric duplex link
 };
 
 struct stats_t {

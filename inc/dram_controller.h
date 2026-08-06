@@ -169,6 +169,17 @@ struct DRAM_CHANNEL final : public champsim::operable {
   champsim::chrono::clock::time_point tx_cycle_available{};
   bool tx_prefer_write = false;
 
+  // [CXLASYM] Per-direction transfer time on the far link. The device this models is
+  // asymmetric -- 18.4 GB/s of read against 12.3 GB/s of write, a ratio of 1.50 -- while a
+  // stock duplex channel gives both directions the same width. Write-allocate traffic is
+  // read-heavy (a fetch and a demand read both ride the read direction), so a symmetric
+  // model lets the read direction bind where the device would still have headroom, and no
+  // transaction budget scaled from the device can ever engage. wr_bus_ratio scales the
+  // write direction's per-line transfer time; 1.0 is the stock symmetric behavior and
+  // leaves every existing result bit-identical.
+  double wr_bus_ratio = 1.0;
+  champsim::chrono::clock::duration dbus_return_time_wr{};
+
   std::size_t refresh_row = 0;
   champsim::chrono::clock::time_point last_refresh{};
   std::size_t DRAM_ROWS_PER_REFRESH;
@@ -234,6 +245,7 @@ public:
   // period == 0 disables it. Only meaningful for a duplex (CXL) controller; the caller
   // is responsible for applying it to the far controller only.
   void set_tx_period(champsim::chrono::picoseconds period);
+  void set_wr_bus_ratio(double ratio); // [CXLASYM]
 
 private:
 
