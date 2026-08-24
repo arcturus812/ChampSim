@@ -27,6 +27,15 @@
 #include "util/span.h"
 #include "util/units.h"
 
+// [CXLMASK] CXL 1.0 Table 36: the byte-enable field is sent as its own data chunk, and only
+// when it is not all ones.  A full-line write is four slots, a partial write five.  Kept as
+// two named constants because the 5/4 ratio is a protocol fact, not a tuning knob.
+namespace
+{
+constexpr long PARTIAL_WRITE_SLOTS = 5;
+constexpr long FULL_WRITE_SLOTS = 4;
+} // namespace
+
 MEMORY_CONTROLLER::MEMORY_CONTROLLER(champsim::chrono::picoseconds dbus_period, champsim::chrono::picoseconds mc_period, std::size_t additional_cycle, std::size_t t_rp, std::size_t t_rcd,
                                      std::size_t t_cas, std::size_t t_ras, champsim::chrono::microseconds refresh_period, std::vector<channel_type*>&& ul,
                                      std::size_t rq_size, std::size_t wq_size, std::size_t chans, champsim::data::bytes chan_width, std::size_t rows,
@@ -399,7 +408,17 @@ long DRAM_CHANNEL::populate_dbus_duplex()
         slot = iter_next_process;
 
         // [CXLASYM] the write direction may transfer a line more slowly than the read one
-        const auto return_time = dir_write ? dbus_return_time_wr : DRAM_DBUS_RETURN_TIME;
+        auto return_time = dir_write ? dbus_return_time_wr : DRAM_DBUS_RETURN_TIME;
+
+        // [CXLMASK] A partial write puts a byte-enable chunk on the wire ahead of the data,
+        // five slots instead of four.  It costs no extra transaction -- that is the whole
+        // point of MemWrPtl -- so modelling only transactions would make the safe policy
+        // identical to the unsafe one by construction, and the comparison would prove
+        // nothing.  The cost is here, in time on the link, where it can actually be seen.
+        if (dir_write && iter_next_process->pkt->value().partial_write) {
+          return_time = (return_time * PARTIAL_WRITE_SLOTS) / FULL_WRITE_SLOTS;
+          ++sim_stats.partial_write_lines;
+        }
 
         if (bankgroup_ready_time > current_time) {
           slot->ready_time = bankgroup_ready_time + return_time;
@@ -687,7 +706,8 @@ void MEMORY_CONTROLLER::initiate_requests()
 }
 
 DRAM_CHANNEL::request_type::request_type(const typename champsim::channel::request_type& req)
-    : pf_metadata(req.pf_metadata), address(req.address), v_address(req.address), data(req.data), instr_depend_on_me(req.instr_depend_on_me)
+    : partial_write(req.partial_write), pf_metadata(req.pf_metadata), address(req.address), v_address(req.address), data(req.data),
+      instr_depend_on_me(req.instr_depend_on_me)
 {
   asid[0] = req.asid[0];
   asid[1] = req.asid[1];

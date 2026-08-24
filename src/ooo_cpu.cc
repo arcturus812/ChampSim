@@ -559,11 +559,17 @@ void O3_CPU::do_execution(ooo_model_instr& instr)
 
 void O3_CPU::do_memory_scheduling(ooo_model_instr& instr)
 {
+  // [CXLSIZE] Sizes are paired with addresses by position, so the operand loops are
+  // indexed rather than ranged.  ooo_model_instr fills both arrays together.
+  assert(std::size(instr.source_size) == std::size(instr.source_memory));
+  assert(std::size(instr.destination_size) == std::size(instr.destination_memory));
+
   // load
-  for (auto& smem : instr.source_memory) {
+  for (std::size_t sidx = 0; sidx < std::size(instr.source_memory); ++sidx) {
+    const auto smem = instr.source_memory[sidx];
     auto q_entry = std::find_if_not(std::begin(LQ), std::end(LQ), [](const auto& lq_entry) { return lq_entry.has_value(); });
     assert(q_entry != std::end(LQ));
-    q_entry->emplace(smem, instr.instr_id, instr.ip, instr.asid); // add it to the load queue
+    q_entry->emplace(smem, instr.instr_id, instr.ip, instr.asid, instr.source_size[sidx]); // add it to the load queue
 
     // Check for forwarding
     auto sq_it = std::max_element(std::begin(SQ), std::end(SQ), [smem](const auto& lhs, const auto& rhs) {
@@ -586,8 +592,9 @@ void O3_CPU::do_memory_scheduling(ooo_model_instr& instr)
   }
 
   // store
-  for (auto& dmem : instr.destination_memory) {
-    SQ.emplace_back(dmem, instr.instr_id, instr.ip, instr.asid); // add it to the store queue
+  for (std::size_t didx = 0; didx < std::size(instr.destination_memory); ++didx) {
+    SQ.emplace_back(instr.destination_memory[didx], instr.instr_id, instr.ip, instr.asid,
+                    instr.destination_size[didx]); // add it to the store queue
   }
 
   if constexpr (champsim::debug_print) {
@@ -659,6 +666,7 @@ bool O3_CPU::do_complete_store(const LSQ_ENTRY& sq_entry)
   data_packet.v_address = sq_entry.virtual_address;
   data_packet.instr_id = sq_entry.instr_id;
   data_packet.ip = sq_entry.ip;
+  data_packet.access_size = sq_entry.access_size; // [CXLSIZE]
 
   if constexpr (champsim::debug_print) {
     fmt::print("[SQ] {} instr_id: {} vaddr: {}\n", __func__, data_packet.instr_id, data_packet.v_address);
@@ -673,6 +681,7 @@ bool O3_CPU::execute_load(const LSQ_ENTRY& lq_entry)
   data_packet.v_address = lq_entry.virtual_address;
   data_packet.instr_id = lq_entry.instr_id;
   data_packet.ip = lq_entry.ip;
+  data_packet.access_size = lq_entry.access_size; // [CXLSIZE]
 
   if constexpr (champsim::debug_print) {
     fmt::print("[LQ] {} instr_id: {} vaddr: {}\n", __func__, data_packet.instr_id, data_packet.v_address);
@@ -853,8 +862,9 @@ void O3_CPU::print_deadlock()
 }
 // LCOV_EXCL_STOP
 
-LSQ_ENTRY::LSQ_ENTRY(champsim::address addr, champsim::program_ordered<LSQ_ENTRY>::id_type id, champsim::address local_ip, std::array<uint8_t, 2> local_asid)
-    : champsim::program_ordered<LSQ_ENTRY>{id}, virtual_address(addr), ip(local_ip), asid(local_asid)
+LSQ_ENTRY::LSQ_ENTRY(champsim::address addr, champsim::program_ordered<LSQ_ENTRY>::id_type id, champsim::address local_ip, std::array<uint8_t, 2> local_asid,
+                     unsigned char size)
+    : champsim::program_ordered<LSQ_ENTRY>{id}, virtual_address(addr), ip(local_ip), asid(local_asid), access_size(size)
 {
 }
 

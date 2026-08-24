@@ -162,6 +162,11 @@ std::vector<std::string> champsim::plain_printer::format(DRAM_CHANNEL::stats_typ
   }
   lines.push_back(fmt::format("{} RD_LINES: {:10} WR_LINES: {:10} RD_BUS_BUSY_ps: {:14} WR_BUS_BUSY_ps: {:14}", stats.name, stats.RD_LINES, stats.WR_LINES,
                               stats.rd_bus_busy_ps, stats.wr_bus_busy_ps));
+  // [CXLMASK] Only when partial writes actually reached the link, so baseline output is
+  // unchanged -- and so a policy that claims to send them can be checked rather than assumed.
+  if (stats.partial_write_lines > 0) {
+    lines.push_back(fmt::format("{} PARTIAL_WRITE_LINES: {:10}", stats.name, stats.partial_write_lines));
+  }
 
   return lines;
 }

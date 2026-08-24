@@ -68,6 +68,7 @@ int main(int argc, char** argv) // NOLINT(bugprone-exception-escape)
   CLI::App app{"A microarchitecture simulator for research and education"};
 
   bool knob_cloudsuite{false};
+  bool knob_size_trace{false};
   long long warmup_instructions = 0;
   long long simulation_instructions = std::numeric_limits<long long>::max();
   std::string json_file_name;
@@ -81,6 +82,9 @@ int main(int argc, char** argv) // NOLINT(bugprone-exception-escape)
   };
 
   app.add_flag("-c,--cloudsuite", knob_cloudsuite, "Read all traces using the cloudsuite format");
+  // [CXLSIZE] Not auto-detected: the record has no header, so a 72-byte record read as
+  // 64 bytes yields plausible garbage instead of an error.
+  app.add_flag("--size-trace", knob_size_trace, "Read all traces using the size-carrying record (input_instr_sz)");
   app.add_flag("--hide-heartbeat", set_heartbeat_callback, "Hide the heartbeat output");
   auto* warmup_instr_option = app.add_option("-w,--warmup-instructions", warmup_instructions, "The number of instructions in the warmup phase");
   auto* deprec_warmup_instr_option =
@@ -118,7 +122,9 @@ int main(int argc, char** argv) // NOLINT(bugprone-exception-escape)
   std::vector<champsim::tracereader> traces;
   std::transform(
       std::begin(trace_names), std::end(trace_names), std::back_inserter(traces),
-      [knob_cloudsuite, repeat = simulation_given, i = uint8_t(0)](auto name) mutable { return get_tracereader(name, i++, knob_cloudsuite, repeat); });
+      [knob_cloudsuite, knob_size_trace, repeat = simulation_given, i = uint8_t(0)](auto name) mutable {
+        return get_tracereader(name, i++, knob_cloudsuite, repeat, knob_size_trace);
+      });
 
   std::vector<champsim::phase_info> phases{
       {champsim::phase_info{"Warmup", true, warmup_instructions, std::vector<std::size_t>(std::size(trace_names), 0), trace_names},

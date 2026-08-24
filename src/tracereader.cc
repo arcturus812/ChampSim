@@ -54,7 +54,7 @@ champsim::tracereader get_tracereader_for_type(std::string fname, uint8_t cpu)
 template <typename T, typename S>
 using repeatable_reader_t = champsim::repeatable<champsim::bulk_tracereader<T, S>, uint8_t, std::string>;
 
-champsim::tracereader get_tracereader(const std::string& fname, uint8_t cpu, bool is_cloudsuite, bool repeat)
+champsim::tracereader get_tracereader(const std::string& fname, uint8_t cpu, bool is_cloudsuite, bool repeat, bool has_sizes)
 {
   if (is_cloudsuite && repeat) {
     return champsim::get_tracereader_for_type<repeatable_reader_t, cloudsuite_instr>(fname, cpu);
@@ -64,7 +64,18 @@ champsim::tracereader get_tracereader(const std::string& fname, uint8_t cpu, boo
     return champsim::get_tracereader_for_type<champsim::bulk_tracereader, cloudsuite_instr>(fname, cpu);
   }
 
-  if (!is_cloudsuite && repeat) {
+  // [CXLSIZE] The size-carrying record is selected by a flag, never sniffed: the format has
+  // no header, magic number or version, so a 72-byte record read as 64 bytes produces a
+  // plausible-looking stream of garbage rather than an error.
+  if (has_sizes && repeat) {
+    return champsim::get_tracereader_for_type<repeatable_reader_t, input_instr_sz>(fname, cpu);
+  }
+
+  if (has_sizes && !repeat) {
+    return champsim::get_tracereader_for_type<champsim::bulk_tracereader, input_instr_sz>(fname, cpu);
+  }
+
+  if (repeat) {
     return champsim::get_tracereader_for_type<repeatable_reader_t, input_instr>(fname, cpu);
   }
 

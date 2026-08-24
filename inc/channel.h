@@ -27,6 +27,7 @@
 #include "access_type.h"
 #include "address.h"
 #include "champsim.h"
+#include "trace_instruction.h" // [CXLSIZE] ACCESS_SIZE_NONE
 
 namespace champsim
 {
@@ -66,6 +67,16 @@ class channel
     uint64_t instr_id = 0;
     champsim::address ip{};
 
+    // [CXLSIZE] Extent of this access in bytes, carried from the trace record.  Requests
+    // are otherwise line-granular, which is exactly why a partial store cannot be told
+    // from a full-line one.  ACCESS_SIZE_NONE on traces that do not carry sizes, so the
+    // default keeps every existing path byte-identical.
+    unsigned char access_size = ACCESS_SIZE_NONE;
+
+    // [CXLMASK] This writeback carries only part of a line and needs byte enables on the
+    // wire.  Set when an elided line reaches eviction without having been fully written.
+    bool partial_write = false;
+
     std::vector<uint64_t> instr_depend_on_me{};
   };
 
@@ -99,6 +110,10 @@ public:
 
   std::deque<request_type> RQ{}, PQ{}, WQ{};
   std::deque<response_type> returned{};
+
+  // [CXLMASK] Read-queue capacity, so a caller can leave headroom for demand traffic
+  // instead of filling the queue with background requests.
+  [[nodiscard]] std::size_t rq_capacity() const { return RQ_SIZE; }
 
   stats_type sim_stats{}, roi_stats{};
 

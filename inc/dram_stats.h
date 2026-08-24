@@ -21,6 +21,9 @@ struct dram_stats {
   uint64_t tx_grants = 0;        // transaction slots consumed
   uint64_t tx_stall_events = 0;  // bus grants deferred because the budget was exhausted
   long long tx_stall_ps = 0;     // cumulative wait attributable to the budget
+
+  // [CXLMASK] writebacks that went out with byte enables rather than as a full line
+  uint64_t partial_write_lines = 0;
 };
 
 dram_stats operator-(dram_stats lhs, dram_stats rhs);

@@ -100,6 +100,12 @@ struct DRAM_CHANNEL final : public champsim::operable {
     bool forward_checked = false;
     bool is_write = false; // [CXLREPRO] direction tag, set on WQ insertion
 
+    // [CXLMASK] A partial-line write carries a byte-enable chunk that a full-line write
+    // does not, so it occupies five data slots where a full line takes four (CXL 1.0
+    // Table 36).  Same one transaction, more time on the wire -- which is exactly the
+    // distinction the three elide policies are meant to separate.
+    bool partial_write = false;
+
     uint8_t asid[2] = {std::numeric_limits<uint8_t>::max(), std::numeric_limits<uint8_t>::max()};
 
     uint32_t pf_metadata = 0;

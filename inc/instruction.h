@@ -23,6 +23,8 @@
 #include <functional>
 #include <limits>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "address.h"
@@ -125,21 +127,55 @@ struct ooo_model_instr : champsim::program_ordered<ooo_model_instr> {
   std::vector<champsim::address> destination_memory = {};
   std::vector<champsim::address> source_memory = {};
 
+  // [CXLSIZE] Byte extent of each memory operand, index-aligned with the arrays above.
+  // ACCESS_SIZE_NONE means the trace did not record it, which is not the same as zero
+  // bytes -- a consumer that needs the extent must check for it rather than assume.
+  std::vector<unsigned char> destination_size = {};
+  std::vector<unsigned char> source_size = {};
+
   // these are indices of instructions in the ROB that depend on me
   std::vector<std::reference_wrapper<ooo_model_instr>> registers_instrs_depend_on_me;
 
 private:
+  // [CXLSIZE] True when the trace record type carries per-operand access sizes.  The record
+  // type is chosen by a command-line flag, so both variants have to compile through the one
+  // constructor template below.
+  template <typename T, typename = void>
+  struct carries_sizes : std::false_type {
+  };
+  template <typename T>
+  struct carries_sizes<T, std::void_t<decltype(std::declval<T&>().destination_size)>> : std::true_type {
+  };
+
+  template <typename A, typename T>
+  static void copy_mem_operands(const A& addrs, const T& instr, std::vector<champsim::address>& out_addr,
+                                std::vector<unsigned char>& out_size, bool is_destination)
+  {
+    for (std::size_t i = 0; i < std::size(addrs); ++i) {
+      if (addrs[i] == 0) {
+        continue;
+      }
+      out_addr.push_back(champsim::address{addrs[i]});
+      if constexpr (carries_sizes<T>::value) {
+        out_size.push_back(is_destination ? instr.destination_size[i] : instr.source_size[i]);
+      } else {
+        out_size.push_back(ACCESS_SIZE_NONE);
+      }
+    }
+  }
+
   template <typename T>
   ooo_model_instr(T instr, std::array<uint8_t, 2> local_asid) : ip(instr.ip), is_branch(instr.is_branch), branch_taken(instr.branch_taken), asid(local_asid)
   {
     std::remove_copy(std::begin(instr.destination_registers), std::end(instr.destination_registers), std::back_inserter(this->destination_registers), 0);
     std::remove_copy(std::begin(instr.source_registers), std::end(instr.source_registers), std::back_inserter(this->source_registers), 0);
 
-    auto dmem_end = std::remove(std::begin(instr.destination_memory), std::end(instr.destination_memory), uint64_t{0});
-    std::transform(std::begin(instr.destination_memory), dmem_end, std::back_inserter(this->destination_memory), [](auto x) { return champsim::address{x}; });
-
-    auto smem_end = std::remove(std::begin(instr.source_memory), std::end(instr.source_memory), uint64_t{0});
-    std::transform(std::begin(instr.source_memory), smem_end, std::back_inserter(this->source_memory), [](auto x) { return champsim::address{x}; });
+    // [CXLSIZE] A size has to stay paired with the address it describes.  std::remove
+    // compacts the address array in place and does not report which slots survived, so the
+    // two arrays are walked together instead.  The surviving order is the same as before:
+    // non-zero entries in their original relative order.
+    copy_mem_operands(instr.destination_memory, instr, this->destination_memory, this->destination_size, true);
+    copy_mem_operands(instr.source_memory, instr, this->source_memory, this->source_size, false);
 
     bool writes_sp = std::count(std::begin(destination_registers), std::end(destination_registers), champsim::REG_STACK_POINTER);
     bool writes_ip = std::count(std::begin(destination_registers), std::end(destination_registers), champsim::REG_INSTRUCTION_POINTER);
@@ -193,6 +229,9 @@ private:
 
 public:
   ooo_model_instr(uint8_t cpu, input_instr instr) : ooo_model_instr(instr, {cpu, cpu}) {}
+  // [CXLSIZE] Same shape as input_instr plus the per-operand sizes; the constructor
+  // template picks the sizes up through carries_sizes.
+  ooo_model_instr(uint8_t cpu, input_instr_sz instr) : ooo_model_instr(instr, {cpu, cpu}) {}
   ooo_model_instr(uint8_t /*cpu*/, cloudsuite_instr instr) : ooo_model_instr(instr, {instr.asid[0], instr.asid[1]}) {}
 
   [[nodiscard]] std::size_t num_mem_ops() const { return std::size(destination_memory) + std::size(source_memory); }

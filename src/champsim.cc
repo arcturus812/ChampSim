@@ -89,6 +89,19 @@ phase_stats do_phase(const phase_info& phase, environment& env, std::vector<trac
   std::vector<double> livelock_threshold{cxl_repro::knobs().livelock_die_ipc, 0.02, 0.05};
   std::vector<uint64_t> livelock_instr(std::size(env.cpu_view()), 0);
 
+  // [CXLTX] A binding transaction budget makes long zero-progress windows legitimate.
+  // The far link serves one line per tx_period_ps, so a full far read queue takes
+  // (queue depth x period) to drain, and if the ROB head waits on the last of those
+  // nothing retires for that whole span -- 521.wrf_r-1957B at a 420,619 ps period needs
+  // 107k cycles for one drain and tripped the stock 50k detector as a false deadlock.
+  // Scale the threshold with the period so a throttled machine is not mistaken for a
+  // stuck one; true deadlock never progresses at all and is still caught.
+  long deadlock_cycle{DEADLOCK_CYCLE};
+  if (cxl_repro::knobs().tx_period_ps > 0 && time_quantum.count() > 0) {
+    const auto period_cycles = cxl_repro::knobs().tx_period_ps / time_quantum.count();
+    deadlock_cycle = std::max<long>(DEADLOCK_CYCLE, 256 * period_cycles);
+  }
+
   // Perform phase
   int stalled_cycle{0};
   std::vector<bool> phase_complete(std::size(env.cpu_view()), false);
@@ -129,7 +142,7 @@ phase_stats do_phase(const phase_info& phase, environment& env, std::vector<trac
       livelock_timer = 0;
     }
 
-    if (stalled_cycle >= DEADLOCK_CYCLE || livelock_trigger) {
+    if (stalled_cycle >= deadlock_cycle || livelock_trigger) {
       std::for_each(std::begin(operables), std::end(operables), [](champsim::operable& c) { c.print_deadlock(); });
       abort();
     }

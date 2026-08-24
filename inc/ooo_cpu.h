@@ -71,10 +71,15 @@ struct LSQ_ENTRY : champsim::program_ordered<LSQ_ENTRY> {
   std::array<uint8_t, 2> asid = {std::numeric_limits<uint8_t>::max(), std::numeric_limits<uint8_t>::max()};
   bool fetch_issued = false;
 
+  // [CXLSIZE] Byte extent of this operand, paired with virtual_address by position in the
+  // instruction's operand list.  ACCESS_SIZE_NONE on size-less traces.
+  unsigned char access_size = ACCESS_SIZE_NONE;
+
   uint64_t producer_id = std::numeric_limits<uint64_t>::max();
   std::vector<std::reference_wrapper<std::optional<LSQ_ENTRY>>> lq_depend_on_me{};
 
-  LSQ_ENTRY(champsim::address addr, champsim::program_ordered<LSQ_ENTRY>::id_type id, champsim::address ip, std::array<uint8_t, 2> asid);
+  LSQ_ENTRY(champsim::address addr, champsim::program_ordered<LSQ_ENTRY>::id_type id, champsim::address ip, std::array<uint8_t, 2> asid,
+            unsigned char size = ACCESS_SIZE_NONE);
   void finish(ooo_model_instr& rob_entry) const;
   void finish(std::deque<ooo_model_instr>::iterator begin, std::deque<ooo_model_instr>::iterator end) const;
 };

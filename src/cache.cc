@@ -99,7 +99,8 @@ auto CACHE::operator=(CACHE&& other) -> CACHE&
 
 CACHE::tag_lookup_type::tag_lookup_type(const request_type& req, bool local_pref, bool skip)
     : address(req.address), v_address(req.v_address), data(req.data), ip(req.ip), instr_id(req.instr_id), pf_metadata(req.pf_metadata), cpu(req.cpu),
-      type(req.type), prefetch_from_this(local_pref), skip_fill(skip), is_translated(req.is_translated), instr_depend_on_me(req.instr_depend_on_me)
+      type(req.type), prefetch_from_this(local_pref), skip_fill(skip), is_translated(req.is_translated), access_size(req.access_size),
+      instr_depend_on_me(req.instr_depend_on_me)
 {
 }
 
@@ -217,9 +218,89 @@ bool CACHE::handle_fill(const mshr_type& fill_mshr)
     bool success = false;
     if(this->NAME == "LLC"){
       if(::is_far_addr(writeback_packet.address.to<uint64_t>())){
+        // [CXLMASK] An elided line that was never fully written cannot just be written back:
+        // the bytes it never received hold whatever the cache line happened to contain.  How
+        // that is settled is the policy under test.
+        const auto wb_line = writeback_packet.address.to<uint64_t>() & ~uint64_t{63};
+        bool sent_partial = false;
+        bool merged_by_fetch = false;
+        if (cxl_repro::mask_tracking_enabled()) {
+          const auto verdict = cxl_repro::mask_peek(wb_line);
+          if (!verdict.tracked) {
+            // A far writeback the cost model exempts: no episode.  Mostly ordinary full
+            // lines (load-fetched, then dirtied), but displaced episodes and warmup
+            // survivors hide in here too, and they escape the partial-write cost.  The
+            // count bounds that optimism (critic F7).
+            ++cxl_repro::mask_stats().untracked_far_writebacks;
+          }
+          using pp = cxl_repro::knobs_t::partial_policy_t;
+          const auto policy = cxl_repro::knobs().partial_policy;
+          if (policy == pp::fetch && verdict.merge_issued) {
+            // A merge read for this eviction is already on the link.  This is checked
+            // before the tracked test because the episode may have been displaced from
+            // the table since the merge was issued -- the in-flight map outlives it.
+            merged_by_fetch = true;
+            if (!verdict.merge_arrived) {
+              return false; // still waiting on the merge data; victim way stays held
+            }
+          } else if (verdict.tracked && !verdict.complete) {
+            if (policy == pp::safe) {
+              // MemWrPtl: the same single transaction, with byte enables riding along.
+              writeback_packet.partial_write = true;
+              sent_partial = true;
+            } else if (policy == pp::fetch) {
+              // No partial-write primitive: the line has to be read back and merged before
+              // it can be written, which is the fetch elision was supposed to avoid.
+              request_type merge_packet = writeback_packet;
+              merge_packet.type = access_type::LOAD;
+              merge_packet.partial_write = false;
+              // The far channel coalesces same-block requests and forwards reads from
+              // queued writes (channel.cc check_collision); a serialized merge racing one
+              // of those loses its one-request-one-response footing -- the response is
+              // shared, someone starves, and the campaign found the wreckage on the far
+              // backlog's heaviest workload (519.lbm_r-413B).  With any same-block
+              // request in flight, fall back to fire-and-forget accounting: the
+              // transaction is still counted, only its serialization is waived.
+              const bool same_block_inflight =
+                  std::any_of(std::begin(MSHR), std::end(MSHR), matches_address(writeback_packet.address))
+                  || std::any_of(std::begin(lower_level_far->RQ), std::end(lower_level_far->RQ),
+                                 [wb_line](const auto& q) { return (q.address.template to<uint64_t>() & ~uint64_t{63}) == wb_line; })
+                  || std::any_of(std::begin(lower_level_far->WQ), std::end(lower_level_far->WQ),
+                                 [wb_line](const auto& q) { return (q.address.template to<uint64_t>() & ~uint64_t{63}) == wb_line; });
+              if (same_block_inflight) {
+                merge_packet.response_requested = false;
+                if (!lower_level_far->add_rq(merge_packet)) {
+                  return false; // retry the whole fill; nothing has been committed yet
+                }
+                ++cxl_repro::stats().far_rfo_fetches;
+                ++cxl_repro::mask_stats().merge_unserialized;
+                // no map entry: the writeback below leaves without waiting
+              } else {
+                // The response is the serialization point: the writeback may not leave
+                // until the merge data is back.  Without this wait the two transactions
+                // are counted but not ordered, and the policy's real cost -- the victim
+                // way held across a far round trip -- never appears in time.
+                merge_packet.response_requested = true;
+                if (!lower_level_far->add_rq(merge_packet)) {
+                  return false; // retry the whole fill; nothing has been committed yet
+                }
+                cxl_repro::mask_mark_merge_issued(wb_line);
+                ++cxl_repro::stats().far_rfo_fetches;
+                return false; // stall: the merge read is in flight
+              }
+            }
+          }
+        }
         success = lower_level_far->add_wq(writeback_packet);
         if (success) {
           ++cxl_repro::stats().far_writebacks; // [CXLREPRO]
+          // [CXLMASK] The line is leaving; whatever it has covered by now is final.
+          if (cxl_repro::mask_tracking_enabled()) {
+            cxl_repro::mask_close(wb_line, sent_partial, merged_by_fetch);
+            if (merged_by_fetch) {
+              cxl_repro::mask_merge_done(wb_line); // the waited-on writeback is sent
+            }
+          }
         }
       }else{
         success = lower_level->add_wq(writeback_packet);
@@ -273,7 +354,36 @@ bool CACHE::handle_fill(const mshr_type& fill_mshr)
       }
     }
 
+    // [CXLMASK] LLC residency of granted lines: the victim loses its way here and the
+    // new line takes it.  This is the commit point -- every `return false` above has
+     // already been passed -- so the +1/-1 cannot double-count on a retried fill.
+    if (this->NAME == "LLC" && cxl_repro::mask_tracking_enabled()) {
+      if (way != set_end && way->valid && ::is_far_addr(way->address.to<uint64_t>())) {
+        // had_writeback: only a dirty victim reached the far writeback path above.
+        cxl_repro::mask_llc_evict(way->address.to<uint64_t>() & ~uint64_t{63}, way->dirty);
+      }
+    }
+
+    // [CXLGATE] The same commit point serves the crossing gates: a victim leaving L1D
+    // descends into a level that tracks 4 B words rather than bytes, so a word left partly
+    // written has no representation below and owes a fetch.  Hooked here and not at the
+    // writeback above because that path can `return false` and be retried, which would
+    // count one crossing several times -- and inflate it in the direction we predict.
+    if (cxl_repro::gate_mode() != 0 && cxl_repro::mask_tracking_enabled() && way != set_end && way->valid
+        && ::is_far_addr(way->address.to<uint64_t>())) {
+      const unsigned level = (this->NAME.find("L1D") != std::string::npos)   ? 1U
+                             : (this->NAME.find("L2C") != std::string::npos) ? 2U
+                                                                             : 0U;
+      if (level != 0U) {
+        cxl_repro::mask_crossing(way->address.to<uint64_t>() & ~uint64_t{63}, level, way->dirty);
+      }
+    }
+
     *way = fill_block(fill_mshr, metadata_thru);
+
+    if (this->NAME == "LLC" && cxl_repro::mask_tracking_enabled() && ::is_far_addr(way->address.to<uint64_t>())) {
+      cxl_repro::mask_llc_insert(way->address.to<uint64_t>() & ~uint64_t{63});
+    }
   }
 
   // COLLECT STATS
@@ -471,7 +581,12 @@ bool CACHE::handle_miss(const tag_lookup_type& handle_pkt)
         // permission at fill latency (the same promise pattern handle_write uses);
         // only the eventual writeback crosses the link. Loads and prefetches fetch
         // as before (the full-line-store assumption is stated in the docs).
-        if (cxl_repro::knobs().elide_store && mshr_pkt.second.type == access_type::RFO && send_to_rq) {
+        // [CXLMASK] The grant is what creates a partially valid line, so it opens the episode
+        // whose coverage decides whether skipping the fetch was safe.  Under admission control
+        // mask_open may decline, and then this store must take the ordinary write-allocate
+        // path below -- the elide is not attempted at all rather than repaired later.
+        if (cxl_repro::knobs().elide_store && mshr_pkt.second.type == access_type::RFO && send_to_rq
+            && cxl_repro::mask_open(mshr_pkt.second.address.to<uint64_t>() & ~uint64_t{63})) {
           ++cxl_repro::stats().elided_grants;
           mshr_pkt.first.data_promise.ready_at(current_time + (warmup ? champsim::chrono::clock::duration{} : FILL_LATENCY));
           if (mshr_pkt.second.response_requested) {
@@ -493,6 +608,13 @@ bool CACHE::handle_miss(const tag_lookup_type& handle_pkt)
             ++cxl_repro::stats().far_prefetch_reads;
           } else {
             ++cxl_repro::stats().far_demand_reads;
+          }
+          // [CXLMASK] A non-RFO fetch of a line whose episode is open violates the oracle
+          // assumption (E2): the fetched full-valid copy can later merge below and the
+          // side table will not see it.  Counting it bounds that bias (critic F5).
+          if (cxl_repro::mask_tracking_enabled()
+              && cxl_repro::mask_episode_open(mshr_pkt.second.address.to<uint64_t>() & ~uint64_t{63})) {
+            ++cxl_repro::mask_stats().fetch_on_open_episode;
           }
         }
       }else{
@@ -586,6 +708,36 @@ long CACHE::operate()
   progress += std::distance(std::cbegin(lower_level->returned), std::cend(lower_level->returned));
   lower_level->returned.clear();
   if(this->NAME == "LLC"){
+    // [CXLMASK] Drain the overflow-materialize queue.  A line displaced from the finite
+    // tracking table has lost its byte mask, so it has to be fetched whole before anyone
+    // can read it -- the graceful degradation that lets a small table be correct.  The
+    // request is real, not a counter, because the study's currency is transactions and a
+    // phantom read would spend none of the budget it is supposed to compete for.  It is
+    // fire-and-forget: nothing is being evicted here, the line stays resident and no way
+    // is held, so there is no consumer to serialize against.
+    // Priority matters: a materialize read is a background correctness obligation, not a
+    // demand miss, and it must never take the far RQ slot a demand miss needs.  Draining
+    // it first starved demand traffic badly enough to trip the deadlock detector at small
+    // table sizes (521.wrf_r-1957B, 2026-08-18) -- an artifact of the drain, not a property
+    // of the workload.  Half the queue is reserved for demand, and the drain is slow.
+    if (cxl_repro::mask_tracking_enabled() && 2 * std::size(lower_level_far->RQ) < lower_level_far->rq_capacity()) {
+      auto& pending = cxl_repro::materialize_pending();
+      for (int drained = 0; drained < 2 && !pending.empty(); ++drained) {
+        request_type mat_packet;
+        mat_packet.address = champsim::address{pending.front()};
+        mat_packet.v_address = mat_packet.address;
+        mat_packet.type = access_type::LOAD;
+        mat_packet.cpu = 0;
+        mat_packet.response_requested = false;
+        mat_packet.is_translated = true;
+        if (!lower_level_far->add_rq(mat_packet)) {
+          break; // far RQ full: the backlog is itself part of the cost
+        }
+        pending.pop_front();
+        ++cxl_repro::stats().far_rfo_fetches;
+        ++progress;
+      }
+    }
     std::for_each(std::cbegin(lower_level_far->returned), std::cend(lower_level_far->returned), [this](const auto& pkt) { this->finish_packet(pkt); });
     progress += std::distance(std::cbegin(lower_level_far->returned), std::cend(lower_level_far->returned));
     lower_level_far->returned.clear();
@@ -670,6 +822,35 @@ long CACHE::operate()
                            [is_ready, is_translated](const auto& pkt) { return is_ready(pkt) && is_translated(pkt); });
   auto hits_end = std::stable_partition(tag_check_ready_begin, tag_check_ready_end, [this](const auto& pkt) { return this->try_hit(pkt); });
   auto finish_tag_check_end = std::stable_partition(hits_end, tag_check_ready_end, do_handle_miss);
+
+  // [CXLMASK] Accumulate byte coverage for elided lines.  This is the one point in the
+  // cache where every access -- hit or miss -- is in hand with its address already
+  // translated, which the side table needs: the episode is keyed by physical line, while
+  // the byte offset within the line survives translation unchanged.
+  //
+  // It has to be the first-level cache.  A store that hits in L1D never travels further,
+  // so a mask kept at the LLC, where the grant happens, would see almost none of the
+  // stores that do the covering.
+  //
+  // Only entries the partitions actually consumed are counted.  The ones left behind are
+  // retried next cycle, and while re-OR-ing a range is harmless, re-counting it in the
+  // size histogram is not.
+  // Per-core caches carry a core prefix ("cpu0_L1D"), so this matches on the suffix the way
+  // the rest of this file does; only the shared LLC is named outright.
+  if (cxl_repro::mask_tracking_enabled() && this->NAME.find("L1D") != std::string::npos) {
+    std::for_each(tag_check_ready_begin, finish_tag_check_end, [](const auto& pkt) {
+      const auto addr = pkt.address.template to<uint64_t>();
+      if (!::is_far_addr(addr)) {
+        return;
+      }
+      if (pkt.type == access_type::WRITE || pkt.type == access_type::RFO) {
+        cxl_repro::mask_store(addr, pkt.access_size);
+      } else if (pkt.type == access_type::LOAD) {
+        cxl_repro::mask_load(addr, pkt.access_size);
+      }
+    });
+  }
+
   tag_check_bw.consume(std::distance(tag_check_ready_begin, finish_tag_check_end));
   inflight_tag_check.erase(tag_check_ready_begin, finish_tag_check_end);
 
@@ -774,12 +955,35 @@ bool CACHE::prefetch_line(uint64_t /*deprecated*/, uint64_t /*deprecated*/, uint
 
 void CACHE::finish_packet(const response_type& packet)
 {
+  // [CXLMASK] A merge fetch (elide_fetch eviction) was issued from the eviction path and
+  // has no MSHR entry; its response must be claimed before the MSHR search below, which
+  // asserts on a miss.  Only the LLC issues merges, and consume() fires at most once per
+  // issued merge, so a demand miss on the same line still finds its own response.
+  if (this->NAME == "LLC" && cxl_repro::mask_tracking_enabled()
+      && cxl_repro::mask_merge_consume(packet.address.to<uint64_t>() & ~uint64_t{63})) {
+    return;
+  }
+
   // check MSHR information
   auto mshr_entry = std::find_if(std::begin(MSHR), std::end(MSHR), matches_address(packet.address));
   auto first_unreturned = std::find_if(MSHR.begin(), MSHR.end(), [](auto x) { return x.data_promise.has_unknown_readiness(); });
 
   // sanity check
   if (mshr_entry == MSHR.end()) {
+    // [CXLMASK] Under elide_fetch a response can survive its consumers: the channel's
+    // same-block coalescing and WQ-forwarding can multiply or reroute responses in ways
+    // the merge protocol cannot see from here.  Dropping it is safe -- every waiter is
+    // covered by the map or an MSHR, so an unclaimed response has no starving owner --
+    // but it must be counted, not silent, and outside that policy it stays fatal.
+    if (cxl_repro::mask_tracking_enabled() && cxl_repro::knobs().partial_policy == cxl_repro::knobs_t::partial_policy_t::fetch) {
+      auto& orphans = cxl_repro::mask_stats().merge_orphan_dropped;
+      if (orphans < 3) {
+        fmt::print(stderr, "[{}_MSHR] {} orphan far response dropped (merge protocol): address: {} v_address: {}\n", NAME, __func__, packet.address,
+                   packet.v_address);
+      }
+      ++orphans;
+      return;
+    }
     fmt::print(stderr, "[{}_MSHR] {} cannot find a matching entry! address: {} v_address: {}\n", NAME, __func__, packet.address, packet.v_address);
     assert(0);
   }

@@ -77,6 +77,11 @@ class CACHE : public champsim::operable
     bool is_translated;
     bool translate_issued = false;
 
+    // [CXLSIZE] Carried through the tag check so the byte extent is still known where the
+    // address is physical.  Translation preserves the page offset, so the offset within
+    // the line is the same before and after -- only the line key needed the physical form.
+    unsigned char access_size = ACCESS_SIZE_NONE;
+
     uint8_t asid[2] = {std::numeric_limits<uint8_t>::max(), std::numeric_limits<uint8_t>::max()};
 
     champsim::chrono::clock::time_point event_cycle = champsim::chrono::clock::time_point::max();
